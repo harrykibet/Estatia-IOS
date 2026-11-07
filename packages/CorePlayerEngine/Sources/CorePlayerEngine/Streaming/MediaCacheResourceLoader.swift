@@ -253,12 +253,7 @@ final class MediaCacheResourceLoader:
             AVAssetResourceLoadingRequest
     ) async {
 
-        let identifier =
-            ObjectIdentifier(
-                loadingRequest
-            )
-
-        do {
+        do {}
 
             try Task.checkCancellation()
 
@@ -321,15 +316,6 @@ final class MediaCacheResourceLoader:
             )
         }
 
-        loadingTasks.removeValue(
-            forKey:
-                identifier
-        )
-
-        loadingRequests.removeValue(
-            forKey:
-                identifier
-        )
     }
 
     // MARK: - Metadata
