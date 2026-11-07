@@ -300,14 +300,18 @@ final class PlayerPoolTests: XCTestCase {
             }
         )
 
+        // Build the immutable source on the test actor before spawning
+        // child tasks; async-let expressions must not capture XCTest self.
+        let source = makeSource("same")
+
         async let first = pool.getOrCreate(
             mediaId: "same",
-            source: makeSource("same")
+            source: source
         )
 
         async let second = pool.getOrCreate(
             mediaId: "same",
-            source: makeSource("same")
+            source: source
         )
 
         let firstPlayer = try await first
