@@ -12,13 +12,28 @@ let package = Package(
             targets: ["CorePlayerUI"]
         ),
     ],
+    dependencies: [
+        .package(path: "../CorePlayerEngine")
+    ],
     targets: [
         .target(
-            name: "CorePlayerUI"
+            name: "CorePlayerUI",
+            dependencies: [
+                .product(
+                    name: "CorePlayerEngine",
+                    package: "coreplayerengine"
+                )
+            ]
         ),
         .testTarget(
             name: "CorePlayerUITests",
-            dependencies: ["CorePlayerUI"]
+            dependencies: [
+                "CorePlayerUI",
+                .product(
+                    name: "CorePlayerEngine",
+                    package: "coreplayerengine"
+                )
+            ]
         ),
     ]
 )
