@@ -27,7 +27,10 @@ final class AVPlayerLoader {
     private let queue = DispatchQueue(label: "com.coreplayerengine.loader")
 
     private let itemObserver = AVPlayerItemObserver()
-    private let timeObserver = AVPlayerTimeObserver(interval: 0.5, queue: .global())
+    private lazy var timeObserver = AVPlayerTimeObserver(
+        interval: 0.5,
+        queue: queue
+    )
 
     // MARK: - State
 
