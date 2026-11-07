@@ -56,7 +56,7 @@ final class DefaultPlayerEngine: PlayerEngine {
         source: MediaSource
     ) async throws {
         try await actor.handle(
-            .load(
+            .loadIdentified(
                 mediaId: mediaId,
                 source: source
             )
