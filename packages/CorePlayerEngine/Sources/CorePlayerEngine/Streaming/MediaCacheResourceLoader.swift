@@ -253,7 +253,7 @@ final class MediaCacheResourceLoader:
             AVAssetResourceLoadingRequest
     ) async {
 
-        do {}
+        do {
 
             try Task.checkCancellation()
 
