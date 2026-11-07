@@ -6,6 +6,9 @@ let package = Package(
     platforms: [
         .iOS(.v18)
     ],
+    dependencies: [
+        .package(path: "../CorePlayerEngine")
+    ],
     products: [
         .library(
             name: "CorePlayerUI",
@@ -14,7 +17,13 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "CorePlayerUI"
+            name: "CorePlayerUI",
+            dependencies: [
+                .product(
+                    name: "CorePlayerEngine",
+                    package: "CorePlayerEngine"
+                )
+            ]
         ),
         .testTarget(
             name: "CorePlayerUITests",

@@ -335,63 +335,67 @@ final class AVPlayerWrapper:
         self.resourceLoader =
             resourceLoader
 
+        // Install event sinks before attaching observers because status observation
+        // includes an initial callback that may be delivered synchronously.
+        itemObserver.emit = { [weak self] event in
+            self?.forward(event)
+        }
+
+        timeObserver.emit = { [weak self] event in
+            self?.forward(event)
+        }
+
+        guard let player = self.player else {
+            return
+        }
+
         itemObserver.attach(
-            to:
-                item
+            to: item
         )
 
         timeObserver.attach(
-            player:
-                player!,
-            item:
-                item
+            player: player,
+            item: item
         )
+    }
 
-        itemObserver.onReady =
-            { [weak self] in
-
-                self?.dispatch {
-                    self?.onReady?()
-                }
+    /// Translates AVFoundation observer events into the wrapper's stable callback API.
+    /// The actor above this adapter remains the sole owner of playback state.
+    private func forward(_ event: PlayerEvent) {
+        switch event {
+        case .ready:
+            dispatch { [weak self] in
+                self?.onReady?()
             }
 
-        itemObserver.onBuffering =
-            { [weak self] buffering in
-
-                self?.dispatch {
-                    self?.onBuffering?(
-                        buffering
-                    )
-                }
+        case .bufferingStarted:
+            dispatch { [weak self] in
+                self?.onBuffering?(true)
             }
 
-        itemObserver.onCompletion =
-            { [weak self] in
-
-                self?.dispatch {
-                    self?.onCompletion?()
-                }
+        case .bufferingEnded:
+            dispatch { [weak self] in
+                self?.onBuffering?(false)
             }
 
-        itemObserver.onError =
-            { [weak self] error in
-
-                self?.dispatch {
-                    self?.onError?(
-                        error
-                    )
-                }
+        case .playbackCompleted:
+            dispatch { [weak self] in
+                self?.onCompletion?()
             }
 
-        timeObserver.onProgress =
-            { [weak self] progress in
-
-                self?.dispatch {
-                    self?.onProgress?(
-                        progress
-                    )
-                }
+        case .failed(let error), .seekFailed(let error):
+            dispatch { [weak self] in
+                self?.onError?(error)
             }
+
+        case .progress(let progress):
+            dispatch { [weak self] in
+                self?.onProgress?(progress)
+            }
+
+        default:
+            break
+        }
     }
 
     // MARK: - Playback
