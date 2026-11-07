@@ -11,6 +11,8 @@ import XCTest
 
 @MainActor
 final class NetworkRecoveryCoordinatorTests: XCTestCase {
+
+    private let policy = NetworkRecoveryPolicy(jitterRatio: 0)
     
     actor SleepRecorder {
 
@@ -236,8 +238,6 @@ final class NetworkRecoveryCoordinatorTests: XCTestCase {
                 random: { 0 }
             )
         
-        let sleeps = await recorder.snapshot()
-            
         coordinator.start()
 
         network.emit(
@@ -261,6 +261,8 @@ final class NetworkRecoveryCoordinatorTests: XCTestCase {
                 break
             }
         }
+
+        let sleeps = await recorder.snapshot()
 
         XCTAssertEqual(
             playback.recoveryAttempts,
