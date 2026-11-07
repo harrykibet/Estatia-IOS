@@ -15,7 +15,12 @@
 import Foundation
 import AVFoundation
 
-final class AVPlayerTimeObserver {
+/// Observes AVPlayer time on the serial queue supplied at initialization.
+///
+/// All mutable state (including attach/detach and the periodic-time callback)
+/// is confined to that queue. The unchecked conformance communicates this
+/// queue-serialization contract to Swift 6's Sendable checking.
+final class AVPlayerTimeObserver: @unchecked Sendable {
 
     // MARK: - Event Sink
 
@@ -41,6 +46,7 @@ final class AVPlayerTimeObserver {
     // MARK: - Public API
 
     func attach(player: AVPlayer, item: AVPlayerItem) {
+        dispatchPrecondition(condition: .onQueue(queue))
         detach()
 
         self.player = player
@@ -57,6 +63,8 @@ final class AVPlayerTimeObserver {
     }
 
     func detach() {
+        dispatchPrecondition(condition: .onQueue(queue))
+
         if let token = timeObserverToken, let player {
             player.removeTimeObserver(token)
         }
@@ -72,6 +80,8 @@ final class AVPlayerTimeObserver {
 private extension AVPlayerTimeObserver {
 
     func handle(time: CMTime) {
+        dispatchPrecondition(condition: .onQueue(queue))
+
         guard let item else { return }
 
         let current = time.seconds
