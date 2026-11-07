@@ -326,12 +326,6 @@ final class AVPlayerWrapper:
         self.playerItem =
             item
 
-        self.player =
-            AVPlayer(
-                playerItem:
-                    item
-            )
-
         self.resourceLoader =
             resourceLoader
 
