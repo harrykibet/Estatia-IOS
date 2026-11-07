@@ -708,13 +708,6 @@ final class MediaCacheResourceLoader:
             Error
     ) -> NSError {
 
-        if let error =
-            error as?
-                NSError {
-
-            return error
-        }
-
         return error as NSError
     }
 
