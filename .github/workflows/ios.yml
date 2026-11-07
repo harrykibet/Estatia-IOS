@@ -6,38 +6,6 @@ on:
   pull_request:
 
 jobs:
-
-  player-packages:
-    name: Player package tests
-    runs-on: macos-26
-    timeout-minutes: 30
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Select Xcode 26.6
-      run: |
-        set -e
-        XCODE_PATH="/Applications/Xcode_26.6.app"
-        if [ ! -d "$XCODE_PATH" ]; then
-          echo "Xcode 26.6 not found at $XCODE_PATH"
-          exit 1
-        fi
-        sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
-
-    - name: Verify toolchain
-      run: |
-        xcodebuild -version
-        swift --version
-        xcodebuild -version | grep "26.6"
-
-    - name: Test CorePlayerEngine
-      run: swift test --package-path packages/CorePlayerEngine
-
-    - name: Test CorePlayerUI
-      run: swift test --package-path packages/CorePlayerUI
-
   build:
     runs-on: macos-26
     timeout-minutes: 60

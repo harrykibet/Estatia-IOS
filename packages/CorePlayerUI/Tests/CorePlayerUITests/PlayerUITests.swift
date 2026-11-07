@@ -1,7 +1,7 @@
 import Testing
+import CorePlayerEngine
 @testable import CorePlayerUI
 
-@Test
-func corePlayerUIModuleCanBeImported() {
-    #expect(true)
+@Test func playerEngineIsAvailableToPlayerUIPackage() {
+    #expect(PlayerState.idle == .idle)
 }

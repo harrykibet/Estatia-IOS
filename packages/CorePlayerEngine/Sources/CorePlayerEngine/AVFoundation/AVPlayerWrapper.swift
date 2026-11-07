@@ -326,76 +326,51 @@ final class AVPlayerWrapper:
         self.playerItem =
             item
 
-        self.player =
-            AVPlayer(
-                playerItem:
-                    item
-            )
-
         self.resourceLoader =
             resourceLoader
 
-        // Install event sinks before attaching observers because status observation
-        // includes an initial callback that may be delivered synchronously.
+        let player = AVPlayer(playerItem: item)
+        self.player = player
+
+        // Install event sinks before attaching observers. The status observer
+        // requests an initial KVO value and must not lose that first event.
         itemObserver.emit = { [weak self] event in
-            self?.forward(event)
+            guard let self else { return }
+
+            self.dispatch {
+                switch event {
+                case .ready:
+                    self.onReady?()
+
+                case .bufferingStarted:
+                    self.onBuffering?(true)
+
+                case .bufferingEnded:
+                    self.onBuffering?(false)
+
+                case .playbackCompleted:
+                    self.onCompletion?()
+
+                case .failed(let error):
+                    self.onError?(error)
+
+                default:
+                    break
+                }
+            }
         }
 
         timeObserver.emit = { [weak self] event in
-            self?.forward(event)
+            guard case let .progress(progress) = event else { return }
+            guard let self else { return }
+
+            self.dispatch {
+                self.onProgress?(progress)
+            }
         }
 
-        guard let player = self.player else {
-            return
-        }
-
-        itemObserver.attach(
-            to: item
-        )
-
-        timeObserver.attach(
-            player: player,
-            item: item
-        )
-    }
-
-    /// Translates AVFoundation observer events into the wrapper's stable callback API.
-    /// The actor above this adapter remains the sole owner of playback state.
-    private func forward(_ event: PlayerEvent) {
-        switch event {
-        case .ready:
-            dispatch { [weak self] in
-                self?.onReady?()
-            }
-
-        case .bufferingStarted:
-            dispatch { [weak self] in
-                self?.onBuffering?(true)
-            }
-
-        case .bufferingEnded:
-            dispatch { [weak self] in
-                self?.onBuffering?(false)
-            }
-
-        case .playbackCompleted:
-            dispatch { [weak self] in
-                self?.onCompletion?()
-            }
-
-        case .failed(let error), .seekFailed(let error):
-            dispatch { [weak self] in
-                self?.onError?(error)
-            }
-
-        case .progress(let progress):
-            dispatch { [weak self] in
-                self?.onProgress?(progress)
-            }
-
-        default:
-            break
-        }
+        itemObserver.attach(to: item)
+        timeObserver.attach(player: player, item: item)
     }
 
     // MARK: - Playback
@@ -506,11 +481,14 @@ final class AVPlayerWrapper:
 
     private func cleanup() {
 
-        resourceLoader =
-            nil
+        resourceLoader = nil
+
+        // Break observer-to-wrapper callbacks before detaching AVFoundation
+        // observations so a queued callback cannot retain stale event sinks.
+        itemObserver.emit = nil
+        timeObserver.emit = nil
 
         itemObserver.detach()
-
         timeObserver.detach()
 
         player?.pause()

@@ -4,10 +4,8 @@ import PackageDescription
 let package = Package(
     name: "CorePlayerUI",
     platforms: [
-        .iOS(.v18)
-    ],
-    dependencies: [
-        .package(path: "../CorePlayerEngine")
+        .iOS(.v18),
+        .macOS(.v13)
     ],
     products: [
         .library(
@@ -15,19 +13,28 @@ let package = Package(
             targets: ["CorePlayerUI"]
         ),
     ],
+    dependencies: [
+        .package(path: "../CorePlayerEngine")
+    ],
     targets: [
         .target(
             name: "CorePlayerUI",
             dependencies: [
                 .product(
                     name: "CorePlayerEngine",
-                    package: "CorePlayerEngine"
+                    package: "coreplayerengine"
                 )
             ]
         ),
         .testTarget(
             name: "CorePlayerUITests",
-            dependencies: ["CorePlayerUI"]
+            dependencies: [
+                "CorePlayerUI",
+                .product(
+                    name: "CorePlayerEngine",
+                    package: "coreplayerengine"
+                )
+            ]
         ),
     ]
 )

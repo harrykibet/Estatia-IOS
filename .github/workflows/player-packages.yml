@@ -1,0 +1,58 @@
+name: Player Package Tests
+
+on:
+  push:
+    branches:
+      - main
+      - chore/player-*
+      - feat/player-*
+    paths:
+      - "packages/CorePlayerEngine/**"
+      - "packages/CorePlayerUI/**"
+      - ".github/workflows/player-packages.yml"
+  pull_request:
+    paths:
+      - "packages/CorePlayerEngine/**"
+      - "packages/CorePlayerUI/**"
+      - ".github/workflows/player-packages.yml"
+
+jobs:
+  core-player-engine:
+    name: CorePlayerEngine
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26.6
+        run: |
+          set -e
+          XCODE_PATH="/Applications/Xcode_26.6.app"
+          test -d "$XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
+          swift --version
+
+      - name: Build and test package
+        run: swift test --package-path packages/CorePlayerEngine
+
+  core-player-ui:
+    name: CorePlayerUI
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26.6
+        run: |
+          set -e
+          XCODE_PATH="/Applications/Xcode_26.6.app"
+          test -d "$XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
+          swift --version
+
+      - name: Build and test package
+        run: swift test --package-path packages/CorePlayerUI

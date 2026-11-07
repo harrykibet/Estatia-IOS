@@ -48,7 +48,7 @@ private actor RequestState {
         let task =
             Task {
                 await operation()
-                await finish(
+                finish(
                     id:
                         id
                 )
@@ -214,15 +214,16 @@ final class MediaCacheResourceLoader:
             )
 
         let request = loadingRequest
+        let loader = self
+        let operation: @Sendable () async -> Void = {
+            await loader.process(request)
+        }
 
-        Task { [weak self, requestState] in
+        Task { [requestState, operation] in
             await requestState.start(
                 id: identifier,
                 request: request,
-                operation: {
-                    guard let self else { return }
-                    await self.process(request)
-                }
+                operation: operation
             )
         }
 
@@ -706,13 +707,6 @@ final class MediaCacheResourceLoader:
         _ error:
             Error
     ) -> NSError {
-
-        if let error =
-            error as?
-                NSError {
-
-            return error
-        }
 
         return error as NSError
     }

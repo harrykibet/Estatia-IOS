@@ -150,13 +150,11 @@ public actor FileMediaCacheStore {
 
         while cursor < requestedEnd {
 
-            guard let chunkStart =
-                    metadata.chunks.keys
-                        .filter {
-                            $0 <= cursor
-                        }
-                        .max()
-            else {
+            let eligibleChunkStarts = metadata.chunks.keys.filter { candidate in
+                candidate <= cursor
+            }
+
+            guard let chunkStart = eligibleChunkStarts.max() else {
                 return nil
             }
 
