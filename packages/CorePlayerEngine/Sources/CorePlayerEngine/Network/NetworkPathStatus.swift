@@ -205,7 +205,7 @@ public final class NetworkConnectivityMonitor:
 
     // MARK: - Mapping
 
-    private static func snapshot(
+    nonisolated private static func snapshot(
         from path: NWPath
     ) -> NetworkSnapshot {
 
