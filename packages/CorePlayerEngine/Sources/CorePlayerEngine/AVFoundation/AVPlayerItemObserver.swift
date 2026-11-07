@@ -16,29 +16,48 @@
 import Foundation
 import AVFoundation
 
-final class AVPlayerItemObserver {
+/// Bridges AVPlayerItem observations into PlayerEvent values.
+///
+/// Observation-token lifecycle and event-sink access are independently
+/// synchronized. AVFoundation may invoke KVO and notification handlers on
+/// arbitrary queues, so this type is explicitly Sendable only because those
+/// shared mutable references are protected by locks.
+final class AVPlayerItemObserver: @unchecked Sendable {
 
     // MARK: - Event Sink
 
-    /// Single event emission point → eliminates callback fragmentation
-    var emit: ((PlayerEvent) -> Void)?
+    private let eventSinkLock = NSLock()
+    private var eventSink: ((PlayerEvent) -> Void)?
 
-    // MARK: - Private
+    var emit: ((PlayerEvent) -> Void)? {
+        get {
+            eventSinkLock.lock()
+            defer { eventSinkLock.unlock() }
+            return eventSink
+        }
+        set {
+            eventSinkLock.lock()
+            defer { eventSinkLock.unlock() }
+            eventSink = newValue
+        }
+    }
+
+    // MARK: - Observation Lifecycle
+
+    private let lifecycleLock = NSLock()
 
     private var statusObserver: NSKeyValueObservation?
     private var bufferObserver: NSKeyValueObservation?
-
     private var endObserver: NSObjectProtocol?
     private var failureObserver: NSObjectProtocol?
-
-    private weak var item: AVPlayerItem?
 
     // MARK: - Public API
 
     func attach(to item: AVPlayerItem) {
-        detach()
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
 
-        self.item = item
+        detachObservations()
 
         observeStatus(item)
         observeBuffering(item)
@@ -47,6 +66,15 @@ final class AVPlayerItemObserver {
     }
 
     func detach() {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+
+        detachObservations()
+    }
+
+    // MARK: - Cleanup
+
+    private func detachObservations() {
         statusObserver?.invalidate()
         bufferObserver?.invalidate()
 
@@ -63,8 +91,6 @@ final class AVPlayerItemObserver {
 
         endObserver = nil
         failureObserver = nil
-
-        item = nil
     }
 }
 
@@ -73,22 +99,26 @@ final class AVPlayerItemObserver {
 private extension AVPlayerItemObserver {
 
     func observeStatus(_ item: AVPlayerItem) {
-        statusObserver = item.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+        statusObserver = item.observe(
+            \.status,
+            options: [.new, .initial]
+        ) { [weak self] item, _ in
             guard let self else { return }
 
             switch item.status {
             case .readyToPlay:
-                emit?(.ready)
+                self.emit?(.ready)
 
             case .failed:
                 if let error = item.error {
-                emit?(.failed(PlayerError.from(error)))
+                    self.emit?(.failed(PlayerError.from(error)))
                 } else {
-                    emit?(.failed(.unknown))
+                    self.emit?(.failed(.unknown))
                 }
 
             case .unknown:
                 break
+
             @unknown default:
                 break
             }
@@ -96,12 +126,14 @@ private extension AVPlayerItemObserver {
     }
 
     func observeBuffering(_ item: AVPlayerItem) {
-        bufferObserver = item.observe(\.isPlaybackLikelyToKeepUp, options: [.new]) { [weak self] item, _ in
+        bufferObserver = item.observe(
+            \.isPlaybackLikelyToKeepUp,
+            options: [.new]
+        ) { [weak self] item, _ in
             guard let self else { return }
 
             let isBuffering = !item.isPlaybackLikelyToKeepUp
-
-            emit?(isBuffering ? .bufferingStarted : .bufferingEnded)
+            self.emit?(isBuffering ? .bufferingStarted : .bufferingEnded)
         }
     }
 
@@ -121,8 +153,15 @@ private extension AVPlayerItemObserver {
             object: item,
             queue: nil
         ) { [weak self] notification in
-            let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
-            self?.emit?(.failed(error.map { PlayerError.from($0) } ?? .unknown))
+            let error = notification.userInfo?[
+                AVPlayerItemFailedToPlayToEndTimeErrorKey
+            ] as? Error
+
+            self?.emit?(
+                .failed(
+                    error.map { PlayerError.from($0) } ?? .unknown
+                )
+            )
         }
     }
 }
