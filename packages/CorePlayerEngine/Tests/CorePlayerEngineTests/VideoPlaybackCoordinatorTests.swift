@@ -84,6 +84,7 @@ final class VideoPlaybackCoordinatorTests: XCTestCase {
         }
     }
 
+    @MainActor
     final class FakeStreamingPipeline:
         StreamingPipeline {
 
