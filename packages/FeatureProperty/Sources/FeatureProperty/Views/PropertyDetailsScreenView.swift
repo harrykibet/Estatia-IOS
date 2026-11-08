@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/property/src/main/java/com/estatia/realestate/apps/feature/property/ui/screens/PropertyDetailsScreen.kt composable PropertyDetailsScreen
 import SwiftUI
+import CoreDesignSystem
 
 public struct PropertyDetailsScreenView: View {
     @StateObject public var viewModel = PropertyDetailsScreenViewModel()
