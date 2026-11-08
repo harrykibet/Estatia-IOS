@@ -4,7 +4,7 @@ import Foundation
 ///
 /// AVPlayerWrapper is the production adapter. Tests use a deterministic fake
 /// so command acceptance can be distinguished from observed transport changes.
-protocol PlayerTransport: AnyObject {
+protocol PlayerTransport: AnyObject, Sendable {
     var onReady: (@MainActor @Sendable () -> Void)? { get set }
     var onTransportStatus: (@MainActor @Sendable (PlayerTransportStatus) -> Void)? { get set }
     var onCompletion: (@MainActor @Sendable () -> Void)? { get set }
