@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/auth/src/main/java/com/estatia/realestate/apps/feature/auth/ui/screens/PhoneVerificationDialog.kt composable PhoneVerificationDialogLightPreview
 import SwiftUI
+import CoreDesignSystem
 
 public struct PhoneVerificationDialogLightPreviewView: View {
     @StateObject public var viewModel = PhoneVerificationDialogLightPreviewViewModel()
