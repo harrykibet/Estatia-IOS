@@ -141,6 +141,10 @@ public final class PlayerManager {
 
         bitrateTask?.cancel()
         bitrateTask = nil
+        if let monitoredBitrateEngine {
+            bitrateController.reset(for: monitoredBitrateEngine)
+            self.monitoredBitrateEngine = nil
+        }
         await orchestrator.pauseCurrent()
         
         audioSession.abandon()
