@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/auth/src/main/java/com/estatia/realestate/apps/feature/auth/ui/screens/LoginScreen.kt composable LoginScreenDark
 import SwiftUI
+import CoreDesignSystem
 
 public struct LoginScreenDarkView: View {
     @StateObject public var viewModel = LoginScreenDarkViewModel()
