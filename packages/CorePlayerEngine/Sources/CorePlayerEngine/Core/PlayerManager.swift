@@ -18,11 +18,10 @@ public final class PlayerManager {
     private let mediaSessionProvider = MediaSessionProvider()
     private let bitrateController = DynamicBitrateController()
     private var bitrateTask: Task<Void, Never>?
+    private var monitoredBitrateEngine: (any AVPlayerProviding)?
     private var poolEnvironment = PlayerPoolEnvironment(
         physicalMemoryMB: Int(ProcessInfo.processInfo.physicalMemory / (1_024 * 1_024))
     )
-    private var activeContentType: PlaybackContentType = .onDemand
-
     public private(set) var activeMediaId: String?
     
     public init() {
@@ -132,7 +131,6 @@ public final class PlayerManager {
         )
 
         activeMediaId = orchestrator.activeMediaId
-        activeContentType = contentType
         await startBitrateMonitoring(
             mediaId: mediaId,
             contentType: contentType
@@ -175,11 +173,18 @@ public final class PlayerManager {
         bitrateTask?.cancel()
         bitrateTask = nil
 
+        if let previousEngine = monitoredBitrateEngine {
+            bitrateController.reset(for: previousEngine)
+        }
+
         guard let events = await orchestrator.observeEvents(mediaId: mediaId),
               let provider = await orchestrator.avPlayerProvider(mediaId: mediaId)
         else {
+            monitoredBitrateEngine = nil
             return
         }
+
+        monitoredBitrateEngine = provider
 
         let controller = bitrateController
         let network = networkMonitor
@@ -227,6 +232,10 @@ public final class PlayerManager {
         poolEnvironmentMonitor.stop()
         bitrateTask?.cancel()
         bitrateTask = nil
+        if let monitoredBitrateEngine {
+            bitrateController.reset(for: monitoredBitrateEngine)
+            self.monitoredBitrateEngine = nil
+        }
         bitrateController.resetAll()
 
         audioSession.cleanup()
