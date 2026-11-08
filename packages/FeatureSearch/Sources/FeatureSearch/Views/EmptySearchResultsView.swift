@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/search/src/main/java/com/estatia/realestate/apps/feature/search/ui/screens/SearchScreen.kt composable EmptySearchResults
 import SwiftUI
+import CoreDesignSystem
 
 public struct EmptySearchResultsView: View {
     @StateObject public var viewModel = EmptySearchResultsViewModel()
