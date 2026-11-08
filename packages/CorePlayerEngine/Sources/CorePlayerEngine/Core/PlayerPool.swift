@@ -223,8 +223,8 @@ public final class PlayerPool {
                 throw CancellationError()
             }
 
-            removeFromPool(managed)
             try? await managed.engine.release()
+            removeFromPool(managed)
             throw error
         }
 
@@ -434,6 +434,14 @@ public final class PlayerPool {
 
     private func acquirePlayer()
         async throws -> ManagedPlayer {
+
+        // A creation task can resume here after an awaited eviction operation.
+        // Never allocate or recycle another engine once a drain has begun.
+        try Task.checkCancellation()
+
+        guard !isDraining else {
+            throw PlayerPoolError.draining
+        }
 
         // 1. Reuse idle resources first.
         if let idle =
