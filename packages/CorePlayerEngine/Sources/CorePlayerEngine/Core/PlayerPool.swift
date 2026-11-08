@@ -486,9 +486,9 @@ public final class PlayerPool {
     // MARK: - Environment
 
     /// Updates the pool's allocation ceiling without interrupting pinned or
-    /// currently playing items. Existing resources are retired as they are
-    /// naturally released; subsequent acquisitions cannot grow beyond the
-    /// newly calculated limit.
+    /// currently playing items. Excess idle engines are released immediately;
+    /// active engines are retired naturally when their owners release them.
+    /// Subsequent acquisitions cannot grow beyond the newly calculated limit.
     public func updateEnvironment(
         _ environment: PlayerPoolEnvironment
     ) {
