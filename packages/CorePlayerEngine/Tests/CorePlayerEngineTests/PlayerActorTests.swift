@@ -191,6 +191,6 @@ final class PlayerActorTests: XCTestCase {
         let pausedState = await states.next()
         XCTAssertEqual(pausedState, .paused)
 
-        await actor.handle(.release)
+        try await actor.handle(.release)
     }
 }
