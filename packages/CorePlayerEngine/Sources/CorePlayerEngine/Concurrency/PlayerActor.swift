@@ -22,12 +22,16 @@ actor PlayerActor {
     // MARK: - Dependencies
     
     private let config: PlayerConfiguration
-    private let player: AVPlayerWrapper
+    private let player: PlayerTransport
     
     private let stateEmitter: PlayerEventEmitter<PlayerState>
     private let eventEmitter: PlayerEventEmitter<PlayerEvent>
     
     private let watchdog: PlaybackWatchdog
+    private let transportEventContinuation:
+        AsyncStream<PlayerActorEvent>.Continuation
+    private let transportEventStream: AsyncStream<PlayerActorEvent>
+    private var transportEventTask: Task<Void, Never>?
     
     // MARK: - State
     
@@ -36,12 +40,16 @@ actor PlayerActor {
     
     private var currentTimeInternal: TimeInterval = 0
     private var durationInternal: TimeInterval?
+
+    /// Desired playback intent is separate from observed transport state.
+    /// A play/pause command changes this value; AVPlayer KVO changes reducer state.
+    private var wantsPlayback = false
     
     // MARK: - Initialization
     
     init(
         config: PlayerConfiguration,
-        player: AVPlayerWrapper,
+        player: PlayerTransport,
         watchdog: PlaybackWatchdog,
         stateEmitter: PlayerEventEmitter<PlayerState>,
         eventEmitter: PlayerEventEmitter<PlayerEvent>
@@ -51,63 +59,64 @@ actor PlayerActor {
         self.watchdog = watchdog
         self.stateEmitter = stateEmitter
         self.eventEmitter = eventEmitter
-        
-        player.onReady = { [weak self] in
-            guard let self else { return }
-            
-            Task {
-                await self.consume(.ready)
-            }
-        }
-        
-        player.onBuffering = { [weak self] buffering in
-            guard let self else { return }
-            
-            Task {
-                await self.consume(
-                    buffering
-                    ? .bufferingStarted
-                    : .bufferingEnded
-                )
-            }
-        }
-        
-        player.onError = { [weak self] error in
-            guard let self else { return }
-            
-            Task {
-                await self.consume(
-                    .failed(
-                        PlayerError.from(error)
-                    )
-                )
-            }
-        }
-        
-        player.onCompletion = { [weak self] in
-            guard let self else {
-                return
-            }
 
-            Task {
-                await self.consume(
-                    .playbackCompleted
-                )
-            }
+        let eventStream = AsyncStream<PlayerActorEvent>.makeStream()
+        self.transportEventContinuation = eventStream.continuation
+        self.transportEventStream = eventStream.stream
+
+        let continuation = eventStream.continuation
+
+        player.onReady = {
+            continuation.yield(.ready)
         }
-        
-        player.onProgress = { [weak self] progress in
-            guard let self else { return }
-            
-            Task {
-                await self.consume(
-                    .progress(progress)
+
+        player.onTransportStatus = { status in
+            continuation.yield(.transportStatus(status))
+        }
+
+        player.onError = { error in
+            continuation.yield(
+                .failed(
+                    PlayerError.from(error)
                 )
+            )
+        }
+
+        player.onCompletion = {
+            continuation.yield(.playbackCompleted)
+        }
+
+        player.onProgress = { progress in
+            continuation.yield(.progress(progress))
+        }
+
+        // Start consuming after initialization has completed. Events emitted
+        // before the consumer starts remain buffered by AsyncStream.
+        Task { [weak self] in
+            await self?.startEventConsumption()
+        }
+    }
+
+    private func startEventConsumption() {
+        guard transportEventTask == nil else {
+            return
+        }
+
+        let stream = transportEventStream
+        transportEventTask = Task { [weak self] in
+            for await event in stream {
+                guard let self else {
+                    return
+                }
+
+                await self.consume(event)
             }
         }
     }
     
     deinit {
+        transportEventContinuation.finish()
+        transportEventTask?.cancel()
         player.release()
     }
     
@@ -143,25 +152,12 @@ actor PlayerActor {
                 try? await handle(.play)
             }
             
-        case .bufferingEnded:
-            await watchdog.cancel()
-            
-            apply(.bufferingEnded)
-            emit(.bufferingEnded)
-            
-        case .bufferingStarted:
-            await watchdog.start { [weak self] in
-                guard let self else { return }
-                
-                Task {
-                    await self.consume(.watchdogExpired)
-                }
-            }
-            
-            apply(.bufferingStarted)
-            emit(.bufferingStarted)
-            
+        case .transportStatus(let status):
+            await consumeTransportStatus(status)
+
         case .playbackCompleted:
+            wantsPlayback = false
+            await watchdog.cancel()
             apply(.playbackCompleted)
             emit(.playbackCompleted)
             
@@ -170,6 +166,7 @@ actor PlayerActor {
             }
             
         case .failed(let error):
+            wantsPlayback = false
             await watchdog.cancel()
             handlePlaybackFailure(error)
             
@@ -179,13 +176,92 @@ actor PlayerActor {
             emit(.progress(progress))
             
         case .watchdogExpired:
-            
+            wantsPlayback = false
+            player.pause()
             apply(.watchdogExpired)
-            
             emit(.failed(.playbackStalled))
         }
     }
     
+    // MARK: - Observed Transport State
+
+    private func consumeTransportStatus(
+        _ status: PlayerTransportStatus
+    ) async {
+        switch status {
+        case .waiting:
+            // Waiting is meaningful only while playback is desired. A paused
+            // player commonly has isPlaybackLikelyToKeepUp == false.
+            guard wantsPlayback,
+                  reducer.state != .reconnecting,
+                  reducer.state != .buffering
+            else {
+                return
+            }
+
+            let previous = reducer.state
+            apply(.bufferingStarted)
+
+            guard previous != reducer.state,
+                  reducer.state == .buffering
+            else {
+                return
+            }
+
+            let continuation = transportEventContinuation
+            await watchdog.start {
+                continuation.yield(.watchdogExpired)
+            }
+
+            emit(.bufferingStarted)
+
+        case .playing:
+            guard wantsPlayback else {
+                return
+            }
+
+            await watchdog.cancel()
+
+            // The first observed playback after network recovery confirms
+            // that transport has recovered; do not infer recovery from a
+            // successful load or a play command.
+            if reducer.state == .reconnecting {
+                apply(.networkRestored)
+            }
+
+            let previous = reducer.state
+            let wasBuffering = previous == .buffering
+            apply(.transportPlaying)
+
+            if previous != reducer.state,
+               reducer.state == .playing {
+                if wasBuffering {
+                    emit(.bufferingEnded)
+                }
+                emit(.playbackStarted)
+            }
+
+        case .paused:
+            guard !wantsPlayback else {
+                return
+            }
+
+            await watchdog.cancel()
+
+            let previous = reducer.state
+            let wasBuffering = previous == .buffering
+            apply(.transportPaused)
+
+            if previous != reducer.state,
+               reducer.state == .paused {
+                if wasBuffering {
+                    emit(.bufferingEnded)
+                }
+                emit(.playbackPaused)
+            }
+        }
+    }
+
     // MARK: - Public Intent Handling
     
     func handle(
@@ -197,7 +273,7 @@ actor PlayerActor {
         case .load(let source):
             
             await watchdog.cancel()
-            
+            wantsPlayback = false
             apply(.loadStarted)
             
             currentSource = source
@@ -220,7 +296,7 @@ actor PlayerActor {
         ):
             
             await watchdog.cancel()
-            
+            wantsPlayback = false
             apply(.loadStarted)
             
             currentSource = source
@@ -246,28 +322,22 @@ actor PlayerActor {
             if reducer.state == .ended {
                 try await player.seek(to: 0)
             }
-            
-            try applyAndPerform(
-                .play
-            ) {
-                player.play()
-            }
-            
-            emit(.playbackStarted)
+
+            wantsPlayback = true
+            player.play()
             
         case .pause:
             
-            guard reducer.state == .playing else {
+            guard wantsPlayback ||
+                  reducer.state == .playing ||
+                  reducer.state == .buffering ||
+                  reducer.state == .reconnecting
+            else {
                 return
             }
-            
-            try applyAndPerform(
-                .pause
-            ) {
-                player.pause()
-            }
-            
-            emit(.playbackPaused)
+
+            wantsPlayback = false
+            player.pause()
             
         case .seek(let seconds):
             
@@ -301,7 +371,7 @@ actor PlayerActor {
         case .stop:
             
             await watchdog.cancel()
-            
+            wantsPlayback = false
             player.stop()
             
             apply(.reset)
@@ -311,7 +381,7 @@ actor PlayerActor {
         case .release:
             
             await watchdog.cancel()
-            
+            wantsPlayback = false
             player.release()
             
             apply(.released)
@@ -339,24 +409,6 @@ actor PlayerActor {
         stateEmitter.emit(newState)
     }
     
-    private func applyAndPerform(
-        _ event: PlaybackStateReducer.Event,
-        operation: () -> Void
-    ) throws {
-        
-        let previous = reducer.state
-        
-        let newState = reducer.reduce(event)
-        
-        guard newState != previous else {
-            return
-        }
-        
-        operation()
-        
-        stateEmitter.emit(newState)
-    }
-    
     private func handlePlaybackFailure(
         _ error: Error
     ) {
@@ -369,7 +421,8 @@ actor PlayerActor {
     private func handlePlaybackFailure(
         _ error: PlayerError
     ) {
-        
+        wantsPlayback = false
+
         switch error {
             
         case .network:
@@ -395,12 +448,9 @@ actor PlayerActor {
         try await player.seek(
             to: 0
         )
-        
-        apply(.play)
-        
+
+        wantsPlayback = true
         player.play()
-        
-        emit(.playbackStarted)
     }
     
     private func emit(
@@ -416,6 +466,8 @@ actor PlayerActor {
     
     func notifyRecoveryExhausted() async {
         await watchdog.cancel()
+        wantsPlayback = false
+        player.pause()
         
         let error = PlayerError.network(
             .retryExhausted
@@ -433,13 +485,11 @@ actor PlayerActor {
 
 // MARK: - Internal Actor Events
 
-private enum PlayerActorEvent {
+private enum PlayerActorEvent: Sendable {
 
     case ready
 
-    case bufferingStarted
-
-    case bufferingEnded
+    case transportStatus(PlayerTransportStatus)
 
     case playbackCompleted
     

@@ -188,6 +188,67 @@ final class PlaybackStateReducerTests: XCTestCase {
         )
     }
 
+
+    func testReplayFromEndedCanEnterBufferingBeforeTransportStarts() {
+
+        var reducer = PlaybackStateReducer()
+        reducer.reduce(.loadStarted)
+        reducer.reduce(.ready)
+        reducer.reduce(.play)
+        reducer.reduce(.playbackCompleted)
+
+        XCTAssertEqual(reducer.state, .ended)
+
+        reducer.reduce(.bufferingStarted)
+
+        XCTAssertEqual(reducer.state, .buffering)
+
+        reducer.reduce(.transportPlaying)
+
+        XCTAssertEqual(reducer.state, .playing)
+    }
+
+    func testObservedTransportPlayingTransitionsBufferingToPlaying() {
+
+        var reducer = PlaybackStateReducer()
+        reducer.reduce(.loadStarted)
+        reducer.reduce(.ready)
+        reducer.reduce(.bufferingStarted)
+
+        reducer.reduce(.transportPlaying)
+
+        XCTAssertEqual(reducer.state, .playing)
+        XCTAssertTrue(reducer.shouldResumeAfterInterruption)
+    }
+
+    func testObservedTransportPausedTransitionsBufferingToPaused() {
+
+        var reducer = PlaybackStateReducer()
+        reducer.reduce(.loadStarted)
+        reducer.reduce(.ready)
+        reducer.reduce(.bufferingStarted)
+
+        reducer.reduce(.transportPaused)
+
+        XCTAssertEqual(reducer.state, .paused)
+        XCTAssertFalse(reducer.shouldResumeAfterInterruption)
+    }
+
+    func testObservedTransportPlayingRestoresReconnectingPlayback() {
+
+        var reducer = PlaybackStateReducer()
+        reducer.reduce(.loadStarted)
+        reducer.reduce(.ready)
+        reducer.reduce(.play)
+        reducer.reduce(.networkLost)
+
+        reducer.reduce(.networkRestored)
+        reducer.reduce(.transportPlaying)
+
+        XCTAssertEqual(reducer.state, .playing)
+        XCTAssertTrue(reducer.shouldResumeAfterInterruption)
+    }
+
     func testResetReturnsToIdle() {
 
         var reducer = PlaybackStateReducer()
