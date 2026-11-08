@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/home/src/main/java/com/estatia/realestate/apps/feature/home/ui/screens/HomeScreen.kt composable LoadingState
 import SwiftUI
+import CoreDesignSystem
 
 public struct LoadingStateView: View {
     @StateObject public var viewModel = LoadingStateViewModel()
