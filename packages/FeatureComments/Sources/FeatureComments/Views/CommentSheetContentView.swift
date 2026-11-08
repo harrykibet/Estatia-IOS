@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/comments/src/main/java/com/estatia/realestate/apps/feature/comments/ui/screens/CommentSheetContent.kt composable CommentSheetContent
 import SwiftUI
+import CoreDesignSystem
 
 public struct CommentSheetContentView: View {
     @StateObject public var viewModel = CommentSheetContentViewModel()
