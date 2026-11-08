@@ -7,6 +7,7 @@ public enum PlayerPoolError:
 
     case capacityExceeded
     case draining
+    case releaseInProgress
     case acquisitionInvalidated
 
     public var errorDescription: String? {
@@ -23,6 +24,11 @@ public enum PlayerPoolError:
             return """
             The player pool is currently releasing its resources and \
             cannot accept new players.
+            """
+
+        case .releaseInProgress:
+            return """
+            The player is being released and cannot be acquired until that operation completes.
             """
 
         case .acquisitionInvalidated:
@@ -80,7 +86,9 @@ public final class PlayerPool {
     /// Stop operations are tracked separately because actor reentrancy allows
     /// releaseAll() to run while an individual engine.stop() is suspended.
     private var inFlightReleases:
-        [ObjectIdentifier: Task<Void, Never>] = [:]
+        [String: Task<Void, Never>] = [:]
+
+    private(set) var releasingMediaIds: Set<String> = []
 
     // MARK: - Lifecycle
 
@@ -119,7 +127,9 @@ public final class PlayerPool {
         mediaId: String
     ) async -> ManagedPlayer? {
 
-        guard !isDraining else {
+        guard !isDraining,
+              !releasingMediaIds.contains(mediaId)
+        else {
             return nil
         }
 
@@ -145,6 +155,10 @@ public final class PlayerPool {
 
         guard !isDraining else {
             throw PlayerPoolError.draining
+        }
+
+        guard !releasingMediaIds.contains(mediaId) else {
+            throw PlayerPoolError.releaseInProgress
         }
 
         let generation = lifecycleGeneration
@@ -263,7 +277,55 @@ public final class PlayerPool {
     public func release(
         mediaId: String
     ) async {
+        // Coalesce repeated release requests for the same media identity.
+        if let existingTask = inFlightReleases[mediaId] {
+            await existingTask.value
+            return
+        }
+
         guard !isDraining else {
+            return
+        }
+
+        guard activePlayers[mediaId] != nil ||
+              inFlightCreations[mediaId] != nil
+        else {
+            return
+        }
+
+        releasingMediaIds.insert(mediaId)
+        let generation = lifecycleGeneration
+
+        // Releasing a media identity also cancels a load that has not yet
+        // become active. getOrCreate() rejects new work until this completes.
+        let task = Task { @MainActor [self] in
+            await finishRelease(
+                mediaId: mediaId,
+                generation: generation
+            )
+        }
+
+        inFlightReleases[mediaId] = task
+        await task.value
+    }
+
+    private func finishRelease(
+        mediaId: String,
+        generation: UInt64
+    ) async {
+        defer {
+            releasingMediaIds.remove(mediaId)
+            inFlightReleases.removeValue(forKey: mediaId)
+        }
+
+        if let creation = inFlightCreations[mediaId] {
+            creation.cancel()
+            _ = try? await creation.value
+        }
+
+        // A pool drain takes ownership if it started while this release was
+        // waiting for a load or stop operation.
+        guard !isDraining, generation == lifecycleGeneration else {
             return
         }
 
@@ -271,37 +333,9 @@ public final class PlayerPool {
             return
         }
 
-        let identifier = ObjectIdentifier(managed)
-        let generation = lifecycleGeneration
-
-        // Track the stop/recycle operation. releaseAll() must wait for this
-        // task before it calls the terminal engine.release().
-        let task = Task { @MainActor [self] in
-            await finishRelease(
-                managed,
-                identifier: identifier,
-                generation: generation
-            )
-        }
-
-        inFlightReleases[identifier] = task
-        await task.value
-    }
-
-    private func finishRelease(
-        _ managed: ManagedPlayer,
-        identifier: ObjectIdentifier,
-        generation: UInt64
-    ) async {
-        defer {
-            inFlightReleases.removeValue(forKey: identifier)
-        }
-
         do {
             try await managed.engine.stop()
         } catch {
-            // If a drain started while stop() was suspended, releaseAll()
-            // now owns this resource and will perform the terminal release.
             guard !isDraining, generation == lifecycleGeneration else {
                 return
             }
@@ -311,9 +345,6 @@ public final class PlayerPool {
             return
         }
 
-        // Actor reentrancy means releaseAll() may have started while stop()
-        // was suspended. Never reinsert a resource into the idle pool after
-        // ownership has transferred to the drain.
         guard !isDraining, generation == lifecycleGeneration else {
             return
         }
@@ -379,6 +410,7 @@ public final class PlayerPool {
         activePlayers.removeAll(keepingCapacity: false)
         idlePlayers.removeAll(keepingCapacity: false)
         pinnedMediaIds.removeAll(keepingCapacity: false)
+        releasingMediaIds.removeAll(keepingCapacity: false)
         allPlayers.removeAll(keepingCapacity: false)
         inFlightCreations.removeAll(keepingCapacity: false)
         inFlightReleases.removeAll(keepingCapacity: false)
@@ -425,9 +457,9 @@ public final class PlayerPool {
             return []
         }
 
-        return Array(
-            activePlayers.values
-        )
+        return activePlayers.values.filter {
+            !releasingMediaIds.contains($0.mediaId ?? "")
+        }
     }
 
     // MARK: - Capacity
