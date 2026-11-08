@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/home/src/main/java/com/estatia/realestate/apps/feature/home/ui/screens/HomeScreen.kt composable HomeEmptyPreview
 import SwiftUI
+import CoreDesignSystem
 
 public struct HomeEmptyPreviewView: View {
     @StateObject public var viewModel = HomeEmptyPreviewViewModel()
