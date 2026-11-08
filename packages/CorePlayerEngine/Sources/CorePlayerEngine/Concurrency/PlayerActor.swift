@@ -30,7 +30,8 @@ actor PlayerActor {
     private let watchdog: PlaybackWatchdog
     private let transportEventContinuation:
         AsyncStream<PlayerActorEvent>.Continuation
-    nonisolated private let transportEventTask: Task<Void, Never>
+    private let transportEventStream: AsyncStream<PlayerActorEvent>
+    private var transportEventTask: Task<Void, Never>?
     
     // MARK: - State
     
@@ -61,15 +62,7 @@ actor PlayerActor {
 
         let eventStream = AsyncStream<PlayerActorEvent>.makeStream()
         self.transportEventContinuation = eventStream.continuation
-        self.transportEventTask = Task { [weak self, stream = eventStream.stream] in
-            for await event in stream {
-                guard let self else {
-                    return
-                }
-
-                await self.consume(event)
-            }
-        }
+        self.transportEventStream = eventStream.stream
 
         let continuation = eventStream.continuation
 
@@ -95,6 +88,29 @@ actor PlayerActor {
 
         player.onProgress = { progress in
             continuation.yield(.progress(progress))
+        }
+
+        // Start consuming after initialization has completed. Events emitted
+        // before the consumer starts remain buffered by AsyncStream.
+        Task { [weak self] in
+            await self?.startEventConsumption()
+        }
+    }
+
+    private func startEventConsumption() {
+        guard transportEventTask == nil else {
+            return
+        }
+
+        let stream = transportEventStream
+        transportEventTask = Task { [weak self] in
+            for await event in stream {
+                guard let self else {
+                    return
+                }
+
+                await self.consume(event)
+            }
         }
     }
     
