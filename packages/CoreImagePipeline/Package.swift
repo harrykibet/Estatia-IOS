@@ -16,6 +16,7 @@ let package = Package(
         ),
     ],
     dependencies: [
+        .package(path: "../CoreCommon"),
         .package(path: "../CoreMediaPipeline"),
         .package(path: "../CoreSecurity"),
         .package(path: "../CoreNetwork")
@@ -26,6 +27,7 @@ let package = Package(
         .target(
             name: "CoreImagePipeline",
             dependencies: [
+                .product(name: "CoreCommon", package: "CoreCommon"),
                 .product(name: "CoreMediaPipeline", package: "CoreMediaPipeline"),
                 .product(name: "CoreSecurity", package: "CoreSecurity"),
                 .product(name: "CoreNetwork", package: "CoreNetwork")
