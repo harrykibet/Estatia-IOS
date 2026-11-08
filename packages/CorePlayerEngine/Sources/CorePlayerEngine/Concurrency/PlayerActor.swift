@@ -28,6 +28,9 @@ actor PlayerActor {
     private let eventEmitter: PlayerEventEmitter<PlayerEvent>
     
     private let watchdog: PlaybackWatchdog
+    private let transportEventContinuation:
+        AsyncStream<PlayerActorEvent>.Continuation
+    private var transportEventTask: Task<Void, Never>?
     
     // MARK: - State
     
@@ -55,61 +58,49 @@ actor PlayerActor {
         self.watchdog = watchdog
         self.stateEmitter = stateEmitter
         self.eventEmitter = eventEmitter
-        
-        player.onReady = { [weak self] in
-            guard let self else { return }
-            
-            Task {
-                await self.consume(.ready)
-            }
-        }
-        
-        player.onTransportStatus = { [weak self] status in
-            guard let self else { return }
 
-            Task {
-                await self.consume(
-                    .transportStatus(status)
-                )
+        let eventStream = AsyncStream<PlayerActorEvent>.makeStream()
+        self.transportEventContinuation = eventStream.continuation
+        self.transportEventTask = Task { [weak self, stream = eventStream.stream] in
+            for await event in stream {
+                guard let self else {
+                    return
+                }
+
+                await self.consume(event)
             }
         }
 
-        player.onError = { [weak self] error in
-            guard let self else { return }
-            
-            Task {
-                await self.consume(
-                    .failed(
-                        PlayerError.from(error)
-                    )
-                )
-            }
-        }
-        
-        player.onCompletion = { [weak self] in
-            guard let self else {
-                return
-            }
+        let continuation = eventStream.continuation
 
-            Task {
-                await self.consume(
-                    .playbackCompleted
-                )
-            }
+        player.onReady = {
+            continuation.yield(.ready)
         }
-        
-        player.onProgress = { [weak self] progress in
-            guard let self else { return }
-            
-            Task {
-                await self.consume(
-                    .progress(progress)
+
+        player.onTransportStatus = { status in
+            continuation.yield(.transportStatus(status))
+        }
+
+        player.onError = { error in
+            continuation.yield(
+                .failed(
+                    PlayerError.from(error)
                 )
-            }
+            )
+        }
+
+        player.onCompletion = {
+            continuation.yield(.playbackCompleted)
+        }
+
+        player.onProgress = { progress in
+            continuation.yield(.progress(progress))
         }
     }
     
     deinit {
+        transportEventContinuation.finish()
+        transportEventTask?.cancel()
         player.release()
     }
     
@@ -201,12 +192,9 @@ actor PlayerActor {
                 return
             }
 
-            await watchdog.start { [weak self] in
-                guard let self else { return }
-
-                Task {
-                    await self.consume(.watchdogExpired)
-                }
+            let continuation = transportEventContinuation
+            await watchdog.start {
+                continuation.yield(.watchdogExpired)
             }
 
             emit(.bufferingStarted)
@@ -481,7 +469,7 @@ actor PlayerActor {
 
 // MARK: - Internal Actor Events
 
-private enum PlayerActorEvent {
+private enum PlayerActorEvent: Sendable {
 
     case ready
 

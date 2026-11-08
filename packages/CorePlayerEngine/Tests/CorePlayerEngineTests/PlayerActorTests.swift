@@ -13,7 +13,7 @@ final class PlayerActorTests: XCTestCase {
 
         private var readyHandler: (@MainActor @Sendable () -> Void)?
         private var transportHandler:
-            (@MainActor @Sendable (PlayerTransportStatus) -> Void)?
+            (@Sendable (PlayerTransportStatus) -> Void)?
         private var completionHandler: (@MainActor @Sendable () -> Void)?
         private var errorHandler: (@MainActor @Sendable (Error) -> Void)?
         private var progressHandler:
@@ -29,7 +29,7 @@ final class PlayerActorTests: XCTestCase {
         }
 
         var onTransportStatus:
-            (@MainActor @Sendable (PlayerTransportStatus) -> Void)? {
+            (@Sendable (PlayerTransportStatus) -> Void)? {
             get { withLock { transportHandler } }
             set { withLock { transportHandler = newValue } }
         }

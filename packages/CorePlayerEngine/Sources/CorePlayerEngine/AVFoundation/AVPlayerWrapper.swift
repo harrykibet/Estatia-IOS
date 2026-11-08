@@ -34,7 +34,7 @@ final class AVPlayerWrapper:
         (@MainActor @Sendable (PlaybackProgress) -> Void)?
 
     var onTransportStatus:
-        (@MainActor @Sendable (PlayerTransportStatus) -> Void)?
+        (@Sendable (PlayerTransportStatus) -> Void)?
 
     // MARK: - AVFoundation
 
@@ -409,15 +409,7 @@ final class AVPlayerWrapper:
                 return
             }
 
-            self.dispatch { [weak self] in
-                guard let self,
-                      self.isCurrentSession(generation)
-                else {
-                    return
-                }
-
-                self.onTransportStatus?(status)
-            }
+            self.onTransportStatus?(status)
         }
 
         itemObserver.attach(to: item)
