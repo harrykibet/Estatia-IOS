@@ -44,18 +44,21 @@ final class PlayerPoolEnvironmentMonitor {
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            // Capture only the Sendable notification name across the actor hop;
+            // Notification itself is not Sendable under Swift 6 strict checking.
+            let notificationName = notification.name.rawValue
             Task { @MainActor [weak self] in
-                self?.handle(notification)
+                self?.handle(notificationName: notificationName)
             }
         }
         observers.append(token)
     }
 
-    private func handle(_ notification: Notification) {
+    private func handle(notificationName: String) {
         #if canImport(UIKit)
-        if notification.name == UIApplication.didReceiveMemoryWarningNotification {
+        if notificationName == UIApplication.didReceiveMemoryWarningNotification.rawValue {
             memoryPressure = .warning
-        } else if notification.name == UIApplication.willEnterForegroundNotification {
+        } else if notificationName == UIApplication.willEnterForegroundNotification.rawValue {
             // A foreground transition is a fresh opportunity to re-evaluate
             // the current process conditions after the OS warning.
             memoryPressure = .normal
