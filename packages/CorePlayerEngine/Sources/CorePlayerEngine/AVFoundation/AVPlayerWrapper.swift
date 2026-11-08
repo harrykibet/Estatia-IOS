@@ -16,15 +16,13 @@ import Foundation
 
 @available(iOS 18.0, macOS 10.15, *)
 final class AVPlayerWrapper:
+    PlayerTransport,
     @unchecked Sendable {
 
     // MARK: - Callbacks
 
     var onReady:
         (@MainActor @Sendable () -> Void)?
-
-    var onBuffering:
-        (@MainActor @Sendable (Bool) -> Void)?
 
     var onCompletion:
         (@MainActor @Sendable () -> Void)?
@@ -34,6 +32,9 @@ final class AVPlayerWrapper:
 
     var onProgress:
         (@MainActor @Sendable (PlaybackProgress) -> Void)?
+
+    var onTransportStatus:
+        (@MainActor @Sendable (PlayerTransportStatus) -> Void)?
 
     // MARK: - AVFoundation
 
@@ -50,6 +51,13 @@ final class AVPlayerWrapper:
 
     private var resourceLoader:
         MediaCacheResourceLoader?
+
+    private var timeControlObserver:
+        NSKeyValueObservation?
+
+    // Accessed by AVFoundation callbacks and the player queue.
+    private let sessionGenerationLock = NSLock()
+    private var sessionGeneration: UInt64 = 0
 
     private let resourceLoaderQueue =
         DispatchQueue(
@@ -332,21 +340,29 @@ final class AVPlayerWrapper:
         let player = AVPlayer(playerItem: item)
         self.player = player
 
-        // Install event sinks before attaching observers. The status observer
+        // Capture the load generation so observations already queued by a
+        // previous item cannot mutate the state of a newly loaded item.
+        let generation = currentSessionGeneration
+
+        // Install event sinks before attaching observers. The item observer
         // requests an initial KVO value and must not lose that first event.
         itemObserver.emit = { [weak self] event in
-            guard let self else { return }
+            guard let self,
+                  self.isCurrentSession(generation)
+            else {
+                return
+            }
 
-            self.dispatch {
+            self.dispatch { [weak self] in
+                guard let self,
+                      self.isCurrentSession(generation)
+                else {
+                    return
+                }
+
                 switch event {
                 case .ready:
                     self.onReady?()
-
-                case .bufferingStarted:
-                    self.onBuffering?(true)
-
-                case .bufferingEnded:
-                    self.onBuffering?(false)
 
                 case .playbackCompleted:
                     self.onCompletion?()
@@ -361,11 +377,46 @@ final class AVPlayerWrapper:
         }
 
         timeObserver.emit = { [weak self] event in
-            guard case let .progress(progress) = event else { return }
-            guard let self else { return }
+            guard case let .progress(progress) = event,
+                  let self,
+                  self.isCurrentSession(generation)
+            else {
+                return
+            }
 
-            self.dispatch {
+            self.dispatch { [weak self] in
+                guard let self,
+                      self.isCurrentSession(generation)
+                else {
+                    return
+                }
+
                 self.onProgress?(progress)
+            }
+        }
+
+        timeControlObserver = player.observe(
+            \.timeControlStatus,
+            options: [.initial, .new]
+        ) { [weak self] observedPlayer, _ in
+            let status = Self.transportStatus(
+                from: observedPlayer.timeControlStatus
+            )
+
+            guard let self,
+                  self.isCurrentSession(generation)
+            else {
+                return
+            }
+
+            self.dispatch { [weak self] in
+                guard let self,
+                      self.isCurrentSession(generation)
+                else {
+                    return
+                }
+
+                self.onTransportStatus?(status)
             }
         }
 
@@ -481,6 +532,10 @@ final class AVPlayerWrapper:
 
     private func cleanup() {
 
+        advanceSessionGeneration()
+        timeControlObserver?.invalidate()
+        timeControlObserver = nil
+
         resourceLoader = nil
 
         // Break observer-to-wrapper callbacks before detaching AVFoundation
@@ -506,6 +561,42 @@ final class AVPlayerWrapper:
 
         asset =
             nil
+    }
+
+    // MARK: - Session Generation
+
+    private var currentSessionGeneration: UInt64 {
+        sessionGenerationLock.lock()
+        defer { sessionGenerationLock.unlock() }
+        return sessionGeneration
+    }
+
+    private func advanceSessionGeneration() {
+        sessionGenerationLock.lock()
+        sessionGeneration &+= 1
+        sessionGenerationLock.unlock()
+    }
+
+    private func isCurrentSession(_ generation: UInt64) -> Bool {
+        currentSessionGeneration == generation
+    }
+
+    private static func transportStatus(
+        from status: AVPlayer.TimeControlStatus
+    ) -> PlayerTransportStatus {
+        switch status {
+        case .paused:
+            return .paused
+
+        case .waitingToPlayAtSpecifiedRate:
+            return .waiting
+
+        case .playing:
+            return .playing
+
+        @unknown default:
+            return .paused
+        }
     }
 
     // MARK: - Dispatch

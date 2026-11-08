@@ -27,6 +27,13 @@ public struct PlaybackStateReducer: Sendable {
         case loadStarted
         case ready
 
+        /// AVPlayer has entered the playing transport state.
+        case transportPlaying
+
+        /// AVPlayer has confirmed that transport is paused.
+        case transportPaused
+
+        // Retained for source compatibility with existing reducer clients.
         case play
         case pause
 
@@ -83,6 +90,30 @@ public struct PlaybackStateReducer: Sendable {
             state = .ready
 
         // MARK: - Playback
+
+        case .transportPlaying:
+            guard state == .ready ||
+                    state == .paused ||
+                    state == .buffering ||
+                    state == .reconnecting ||
+                    state == .ended
+            else {
+                return state
+            }
+
+            state = .playing
+            resumeAfterInterruption = true
+
+        case .transportPaused:
+            guard state == .playing ||
+                    state == .buffering ||
+                    state == .reconnecting
+            else {
+                return state
+            }
+
+            state = .paused
+            resumeAfterInterruption = false
 
         case .play:
             guard state.isPlayable else {

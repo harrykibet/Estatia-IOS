@@ -188,6 +188,48 @@ final class PlaybackStateReducerTests: XCTestCase {
         )
     }
 
+
+    func testObservedTransportPlayingTransitionsBufferingToPlaying() {
+
+        var reducer = PlaybackStateReducer()
+        reducer.reduce(.loadStarted)
+        reducer.reduce(.ready)
+        reducer.reduce(.bufferingStarted)
+
+        reducer.reduce(.transportPlaying)
+
+        XCTAssertEqual(reducer.state, .playing)
+        XCTAssertTrue(reducer.shouldResumeAfterInterruption)
+    }
+
+    func testObservedTransportPausedTransitionsBufferingToPaused() {
+
+        var reducer = PlaybackStateReducer()
+        reducer.reduce(.loadStarted)
+        reducer.reduce(.ready)
+        reducer.reduce(.bufferingStarted)
+
+        reducer.reduce(.transportPaused)
+
+        XCTAssertEqual(reducer.state, .paused)
+        XCTAssertFalse(reducer.shouldResumeAfterInterruption)
+    }
+
+    func testObservedTransportPlayingRestoresReconnectingPlayback() {
+
+        var reducer = PlaybackStateReducer()
+        reducer.reduce(.loadStarted)
+        reducer.reduce(.ready)
+        reducer.reduce(.play)
+        reducer.reduce(.networkLost)
+
+        reducer.reduce(.networkRestored)
+        reducer.reduce(.transportPlaying)
+
+        XCTAssertEqual(reducer.state, .playing)
+        XCTAssertTrue(reducer.shouldResumeAfterInterruption)
+    }
+
     func testResetReturnsToIdle() {
 
         var reducer = PlaybackStateReducer()

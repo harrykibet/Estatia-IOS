@@ -47,7 +47,6 @@ final class AVPlayerItemObserver: @unchecked Sendable {
     private let lifecycleLock = NSLock()
 
     private var statusObserver: NSKeyValueObservation?
-    private var bufferObserver: NSKeyValueObservation?
     private var endObserver: NSObjectProtocol?
     private var failureObserver: NSObjectProtocol?
 
@@ -60,7 +59,6 @@ final class AVPlayerItemObserver: @unchecked Sendable {
         detachObservations()
 
         observeStatus(item)
-        observeBuffering(item)
         observeCompletion(item)
         observeFailure(item)
     }
@@ -76,10 +74,7 @@ final class AVPlayerItemObserver: @unchecked Sendable {
 
     private func detachObservations() {
         statusObserver?.invalidate()
-        bufferObserver?.invalidate()
-
         statusObserver = nil
-        bufferObserver = nil
 
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
@@ -122,18 +117,6 @@ private extension AVPlayerItemObserver {
             @unknown default:
                 break
             }
-        }
-    }
-
-    func observeBuffering(_ item: AVPlayerItem) {
-        bufferObserver = item.observe(
-            \.isPlaybackLikelyToKeepUp,
-            options: [.new]
-        ) { [weak self] item, _ in
-            guard let self else { return }
-
-            let isBuffering = !item.isPlaybackLikelyToKeepUp
-            self.emit?(isBuffering ? .bufferingStarted : .bufferingEnded)
         }
     }
 
