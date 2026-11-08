@@ -550,6 +550,10 @@ public final class PlayerPool {
             throw PlayerPoolError.draining
         }
 
+        guard !releasingMediaIds.contains(mediaId) else {
+            throw PlayerPoolError.releaseInProgress
+        }
+
         guard activePlayers[mediaId] === managed else {
             throw PlayerPoolError.acquisitionInvalidated
         }
