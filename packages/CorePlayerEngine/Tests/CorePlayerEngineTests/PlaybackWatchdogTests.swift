@@ -65,6 +65,9 @@ final class PlaybackWatchdogTests: XCTestCase {
     func testRestartInvalidatesPreviousGeneration() async {
 
         let watchdog = PlaybackWatchdog(
+            configuration: .init(
+                bufferingTimeout: .milliseconds(25)
+            ),
             sleep: { duration in
                 try await Task.sleep(
                     for: duration

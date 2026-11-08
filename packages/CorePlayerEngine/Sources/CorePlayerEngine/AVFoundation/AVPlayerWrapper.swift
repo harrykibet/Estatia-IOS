@@ -326,72 +326,51 @@ final class AVPlayerWrapper:
         self.playerItem =
             item
 
-        self.player =
-            AVPlayer(
-                playerItem:
-                    item
-            )
-
         self.resourceLoader =
             resourceLoader
 
-        itemObserver.attach(
-            to:
-                item
-        )
+        let player = AVPlayer(playerItem: item)
+        self.player = player
 
-        timeObserver.attach(
-            player:
-                player!,
-            item:
-                item
-        )
+        // Install event sinks before attaching observers. The status observer
+        // requests an initial KVO value and must not lose that first event.
+        itemObserver.emit = { [weak self] event in
+            guard let self else { return }
 
-        itemObserver.onReady =
-            { [weak self] in
+            self.dispatch {
+                switch event {
+                case .ready:
+                    self.onReady?()
 
-                self?.dispatch {
-                    self?.onReady?()
+                case .bufferingStarted:
+                    self.onBuffering?(true)
+
+                case .bufferingEnded:
+                    self.onBuffering?(false)
+
+                case .playbackCompleted:
+                    self.onCompletion?()
+
+                case .failed(let error):
+                    self.onError?(error)
+
+                default:
+                    break
                 }
             }
+        }
 
-        itemObserver.onBuffering =
-            { [weak self] buffering in
+        timeObserver.emit = { [weak self] event in
+            guard case let .progress(progress) = event else { return }
+            guard let self else { return }
 
-                self?.dispatch {
-                    self?.onBuffering?(
-                        buffering
-                    )
-                }
+            self.dispatch {
+                self.onProgress?(progress)
             }
+        }
 
-        itemObserver.onCompletion =
-            { [weak self] in
-
-                self?.dispatch {
-                    self?.onCompletion?()
-                }
-            }
-
-        itemObserver.onError =
-            { [weak self] error in
-
-                self?.dispatch {
-                    self?.onError?(
-                        error
-                    )
-                }
-            }
-
-        timeObserver.onProgress =
-            { [weak self] progress in
-
-                self?.dispatch {
-                    self?.onProgress?(
-                        progress
-                    )
-                }
-            }
+        itemObserver.attach(to: item)
+        timeObserver.attach(player: player, item: item)
     }
 
     // MARK: - Playback
@@ -502,11 +481,14 @@ final class AVPlayerWrapper:
 
     private func cleanup() {
 
-        resourceLoader =
-            nil
+        resourceLoader = nil
+
+        // Break observer-to-wrapper callbacks before detaching AVFoundation
+        // observations so a queued callback cannot retain stale event sinks.
+        itemObserver.emit = nil
+        timeObserver.emit = nil
 
         itemObserver.detach()
-
         timeObserver.detach()
 
         player?.pause()

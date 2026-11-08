@@ -27,7 +27,10 @@ final class AVPlayerLoader {
     private let queue = DispatchQueue(label: "com.coreplayerengine.loader")
 
     private let itemObserver = AVPlayerItemObserver()
-    private let timeObserver = AVPlayerTimeObserver(interval: 0.5, queue: .global())
+    private lazy var timeObserver = AVPlayerTimeObserver(
+        interval: 0.5,
+        queue: queue
+    )
 
     // MARK: - State
 
@@ -103,32 +106,18 @@ private extension AVPlayerLoader {
         
     func prepare(asset: AVURLAsset) async throws {
 
-        let keys = ["playable", "duration", "tracks"]
+        // Use AVFoundation's async property loading rather than the legacy
+        // loadValuesAsynchronously/statusOfValue KVO-era API.
+        async let playable = asset.load(.isPlayable)
+        async let tracks = asset.load(.tracks)
 
-        try await withCheckedThrowingContinuation { continuation in
-            asset.loadValuesAsynchronously(forKeys: keys) {
-                var error: NSError?
+        let (isPlayable, loadedTracks) = try await (playable, tracks)
 
-                for key in keys {
-                    let status = asset.statusOfValue(forKey: key, error: &error)
-
-                    if status != .loaded {
-                        continuation.resume(
-                            throwing: error ?? PlayerError.invalidSource
-                        )
-                        return
-                    }
-                }
-
-                continuation.resume()
-            }
-        }
-
-        guard asset.isPlayable else {
+        guard isPlayable else {
             throw PlayerError.unsupportedFormat
         }
 
-        guard !asset.tracks.isEmpty else {
+        guard !loadedTracks.isEmpty else {
             throw PlayerError.invalidSource
         }
     }

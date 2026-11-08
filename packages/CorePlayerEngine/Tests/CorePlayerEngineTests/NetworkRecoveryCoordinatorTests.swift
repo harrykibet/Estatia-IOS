@@ -11,6 +11,8 @@ import XCTest
 
 @MainActor
 final class NetworkRecoveryCoordinatorTests: XCTestCase {
+
+    private let policy = NetworkRecoveryPolicy(jitterRatio: 0)
     
     actor SleepRecorder {
 
@@ -73,6 +75,8 @@ final class NetworkRecoveryCoordinatorTests: XCTestCase {
 
         var reconnecting = false
 
+        var onNetworkUnavailable: (() -> Void)?
+
         var recoveryAttempts = 0
 
         var successfulRecovery =
@@ -85,6 +89,7 @@ final class NetworkRecoveryCoordinatorTests: XCTestCase {
 
         func markNetworkUnavailable() async {
             reconnecting = true
+            onNetworkUnavailable?()
         }
 
         func isActiveMediaReconnecting()
@@ -124,6 +129,15 @@ final class NetworkRecoveryCoordinatorTests: XCTestCase {
         let playback =
             FakePlayback()
 
+        let networkLossHandled =
+            expectation(
+                description: "Network loss is forwarded to playback"
+            )
+
+        playback.onNetworkUnavailable = {
+            networkLossHandled.fulfill()
+        }
+
         let recorder = SleepRecorder()
 
         let coordinator =
@@ -136,7 +150,7 @@ final class NetworkRecoveryCoordinatorTests: XCTestCase {
                 },
                 random: { 0 }
             )
-            
+
         coordinator.start()
 
         network.emit(
@@ -145,7 +159,10 @@ final class NetworkRecoveryCoordinatorTests: XCTestCase {
             )
         )
 
-        await Task.yield()
+        await fulfillment(
+            of: [networkLossHandled],
+            timeout: 1
+        )
 
         XCTAssertTrue(
             playback.reconnecting
@@ -236,8 +253,6 @@ final class NetworkRecoveryCoordinatorTests: XCTestCase {
                 random: { 0 }
             )
         
-        let sleeps = await recorder.snapshot()
-            
         coordinator.start()
 
         network.emit(
@@ -261,6 +276,8 @@ final class NetworkRecoveryCoordinatorTests: XCTestCase {
                 break
             }
         }
+
+        let sleeps = await recorder.snapshot()
 
         XCTAssertEqual(
             playback.recoveryAttempts,

@@ -169,7 +169,7 @@ public final class VideoPlaybackCoordinator {
 
         // During a fling, speculative preloading adds pressure exactly
         // when the user is generating the most churn.
-        guard !isFlinging else {
+        guard !flinging else {
             return
         }
 

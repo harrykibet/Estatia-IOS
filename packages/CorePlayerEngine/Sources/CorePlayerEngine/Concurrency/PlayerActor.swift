@@ -214,7 +214,7 @@ actor PlayerActor {
                 throw error
             }
 
-        case let .load(
+        case let .loadIdentified(
             mediaId: mediaId,
             source: source
         ):

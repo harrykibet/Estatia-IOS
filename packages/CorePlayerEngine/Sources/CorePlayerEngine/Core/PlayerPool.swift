@@ -78,17 +78,26 @@ public final class PlayerPool {
     // MARK: - Initialization
 
     public init(
-        configuration:
-            PlayerPoolConfiguration =
-            PlayerPoolConfiguration(),
-
-        factory: @escaping @MainActor () -> PlayerEngine =
-            {
-                PlayerEngineFactory.make()
-            }
+        configuration: PlayerPoolConfiguration = PlayerPoolConfiguration(),
+        factory: @escaping @MainActor () -> PlayerEngine
     ) {
         self.configuration = configuration
         self.makeEngine = factory
+    }
+
+    /// Creates a pool backed by the package's default AVFoundation engine.
+    ///
+    /// Tests and alternative integrations should inject a factory through
+    /// the designated initializer to keep player construction deterministic.
+    public convenience init(
+        configuration: PlayerPoolConfiguration = PlayerPoolConfiguration()
+    ) {
+        self.init(
+            configuration: configuration,
+            factory: {
+                PlayerEngineFactory.make()
+            }
+        )
     }
 
     // MARK: - Lookup

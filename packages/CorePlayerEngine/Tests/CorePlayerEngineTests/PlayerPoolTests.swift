@@ -87,6 +87,16 @@ final class PlayerPoolTests: XCTestCase {
             eventContinuation?.finish()
         }
 
+        var currentState: PlayerState {
+            get async {
+                .idle
+            }
+        }
+
+        func notifyNetworkLost() async {}
+
+        func notifyRecoveryExhausted() async {}
+
         var currentTime: TimeInterval {
             get async {
                 0
@@ -140,8 +150,11 @@ final class PlayerPoolTests: XCTestCase {
             created[0].loadedMediaIds,
             ["one"]
         )
-        XCTAssertEqual(await pool.activeCount, 1)
-        XCTAssertEqual(await pool.idleCount, 0)
+        let activeCount = pool.activeCount
+        let idleCount = pool.idleCount
+
+        XCTAssertEqual(activeCount, 1)
+        XCTAssertEqual(idleCount, 0)
     }
 
     func testReleasedPlayerIsReused() async {
@@ -211,14 +224,12 @@ final class PlayerPoolTests: XCTestCase {
         )
 
         XCTAssertEqual(created.count, 2)
-        XCTAssertTrue(
-            second.engine ===
-            (await pool.get(mediaId: "three"))?.engine
-        )
-        XCTAssertTrue(
-            first.engine ===
-            (await pool.get(mediaId: "one"))?.engine
-        )
+
+        let recycledPlayer = await pool.get(mediaId: "three")
+        let pinnedPlayer = await pool.get(mediaId: "one")
+
+        XCTAssertTrue(second.engine === recycledPlayer?.engine)
+        XCTAssertTrue(first.engine === pinnedPlayer?.engine)
     }
 
     func testPinnedPlayersCannotBeEvicted() async {
@@ -289,14 +300,18 @@ final class PlayerPoolTests: XCTestCase {
             }
         )
 
+        // Build the immutable source on the test actor before spawning
+        // child tasks; async-let expressions must not capture XCTest self.
+        let source = makeSource("same")
+
         async let first = pool.getOrCreate(
             mediaId: "same",
-            source: makeSource("same")
+            source: source
         )
 
         async let second = pool.getOrCreate(
             mediaId: "same",
-            source: makeSource("same")
+            source: source
         )
 
         let firstPlayer = try await first
@@ -343,19 +358,12 @@ final class PlayerPoolTests: XCTestCase {
             2
         )
 
-        XCTAssertEqual(
-            await pool.activeCount,
-            0
-        )
+        let activeCount = pool.activeCount
+        let idleCount = pool.idleCount
+        let retainedPlayerCount = pool.retainedPlayerCount
 
-        XCTAssertEqual(
-            await pool.idleCount,
-            0
-        )
-
-        XCTAssertEqual(
-            await pool.retainedPlayerCount,
-            0
-        )
+        XCTAssertEqual(activeCount, 0)
+        XCTAssertEqual(idleCount, 0)
+        XCTAssertEqual(retainedPlayerCount, 0)
     }
 }
