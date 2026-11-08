@@ -12,7 +12,8 @@ import CorePlayerEngine
 /// Formats playback positions consistently across the player controls.
 public enum PlayerTimeFormatter {
     public static func string(from time: TimeInterval) -> String {
-        let safeTime = max(0, Int(time.isFinite ? time : 0))
+        let boundedTime = time.isFinite ? min(max(time, 0), 359_999_999) : 0
+        let safeTime = Int(boundedTime)
         let hours = safeTime / 3_600
         let minutes = (safeTime % 3_600) / 60
         let seconds = safeTime % 60
