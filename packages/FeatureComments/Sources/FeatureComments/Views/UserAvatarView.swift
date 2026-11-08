@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/comments/src/main/java/com/estatia/realestate/apps/feature/comments/ui/screens/CommentSheetContent.kt composable UserAvatar
 import SwiftUI
+import CoreDesignSystem
 
 public struct UserAvatarView: View {
     @StateObject public var viewModel = UserAvatarViewModel()
