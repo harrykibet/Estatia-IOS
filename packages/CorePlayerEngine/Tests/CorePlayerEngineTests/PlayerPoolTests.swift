@@ -5,7 +5,7 @@ import XCTest
 final class PlayerPoolTests: XCTestCase {
 
     @MainActor
-    private final class ManualAsyncGate {
+    final class ManualAsyncGate {
         private var continuation: CheckedContinuation<Void, Never>?
         private(set) var isWaiting = false
 
