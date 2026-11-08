@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/auth/src/main/java/com/estatia/realestate/apps/feature/auth/ui/screens/ForgotPasswordDialog.kt composable ForgotPasswordContent
 import SwiftUI
+import CoreDesignSystem
 
 public struct ForgotPasswordContentView: View {
     @StateObject public var viewModel = ForgotPasswordContentViewModel()
