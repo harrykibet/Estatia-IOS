@@ -113,15 +113,18 @@ public struct BitratePolicy: Sendable {
             target *= 0.55
         }
 
+        let deviceCeiling: Double
         if let deviceMaximum = input.deviceMaximumBitrateBps,
            deviceMaximum.isFinite,
            deviceMaximum > 0 {
-            target = min(target, deviceMaximum)
+            deviceCeiling = min(networkCeiling, deviceMaximum)
+        } else {
+            deviceCeiling = networkCeiling
         }
 
-        // Do not let a minimum-quality floor exceed a genuinely slow measured
-        // network. The floor is bounded by the measured network ceiling.
-        let floor = min(minimumBitrateBps, networkCeiling)
-        return min(networkCeiling, max(floor, target))
+        // Neither the quality floor nor the target may exceed the measured
+        // network ceiling or an explicitly supplied device capability limit.
+        let floor = min(minimumBitrateBps, deviceCeiling)
+        return min(deviceCeiling, max(floor, target))
     }
 }
