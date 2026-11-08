@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/auth/src/main/java/com/estatia/realestate/apps/feature/auth/ui/screens/SignUpScreen.kt composable UserTypeDropdownMenu
 import SwiftUI
+import CoreDesignSystem
 
 public struct UserTypeDropdownMenuView: View {
     @StateObject public var viewModel = UserTypeDropdownMenuViewModel()
