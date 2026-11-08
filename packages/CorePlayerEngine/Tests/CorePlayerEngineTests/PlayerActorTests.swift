@@ -95,6 +95,7 @@ final class PlayerActorTests: XCTestCase {
         let transport = FakePlayerTransport()
         let stateEmitter = PlayerEventEmitter<PlayerState>()
         let eventEmitter = PlayerEventEmitter<PlayerEvent>()
+        var events = eventEmitter.stream.makeAsyncIterator()
 
         let actor = PlayerActor(
             config: PlayerConfiguration(),
@@ -122,6 +123,11 @@ final class PlayerActorTests: XCTestCase {
         transport.emitReady()
         let readyState = await states.next()
         XCTAssertEqual(readyState, .ready)
+        let readyEvent = await events.next()
+        if case .ready? = readyEvent {
+        } else {
+            XCTFail("Expected ready event")
+        }
 
         try await actor.handle(.play)
 
@@ -132,10 +138,25 @@ final class PlayerActorTests: XCTestCase {
         transport.emitTransportStatus(.waiting)
         let bufferingState = await states.next()
         XCTAssertEqual(bufferingState, .buffering)
+        let bufferingStartedEvent = await events.next()
+        if case .bufferingStarted? = bufferingStartedEvent {
+        } else {
+            XCTFail("Expected bufferingStarted event")
+        }
 
         transport.emitTransportStatus(.playing)
         let playingState = await states.next()
         XCTAssertEqual(playingState, .playing)
+        let bufferingEndedEvent = await events.next()
+        if case .bufferingEnded? = bufferingEndedEvent {
+        } else {
+            XCTFail("Expected bufferingEnded event before playbackStarted")
+        }
+        let playbackStartedEvent = await events.next()
+        if case .playbackStarted? = playbackStartedEvent {
+        } else {
+            XCTFail("Expected playbackStarted event")
+        }
         let currentPlayingState = await actor.currentState
         XCTAssertEqual(currentPlayingState, .playing)
 
@@ -148,6 +169,11 @@ final class PlayerActorTests: XCTestCase {
         transport.emitTransportStatus(.paused)
         let pausedState = await states.next()
         XCTAssertEqual(pausedState, .paused)
+        let playbackPausedEvent = await events.next()
+        if case .playbackPaused? = playbackPausedEvent {
+        } else {
+            XCTFail("Expected playbackPaused event")
+        }
         let currentPausedState = await actor.currentState
         XCTAssertEqual(currentPausedState, .paused)
 

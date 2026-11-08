@@ -189,6 +189,25 @@ final class PlaybackStateReducerTests: XCTestCase {
     }
 
 
+    func testReplayFromEndedCanEnterBufferingBeforeTransportStarts() {
+
+        var reducer = PlaybackStateReducer()
+        reducer.reduce(.loadStarted)
+        reducer.reduce(.ready)
+        reducer.reduce(.play)
+        reducer.reduce(.playbackCompleted)
+
+        XCTAssertEqual(reducer.state, .ended)
+
+        reducer.reduce(.bufferingStarted)
+
+        XCTAssertEqual(reducer.state, .buffering)
+
+        reducer.reduce(.transportPlaying)
+
+        XCTAssertEqual(reducer.state, .playing)
+    }
+
     func testObservedTransportPlayingTransitionsBufferingToPlaying() {
 
         var reducer = PlaybackStateReducer()

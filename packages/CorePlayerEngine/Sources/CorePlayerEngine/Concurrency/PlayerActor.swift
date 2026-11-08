@@ -226,10 +226,14 @@ actor PlayerActor {
             }
 
             let previous = reducer.state
+            let wasBuffering = previous == .buffering
             apply(.transportPlaying)
 
             if previous != reducer.state,
                reducer.state == .playing {
+                if wasBuffering {
+                    emit(.bufferingEnded)
+                }
                 emit(.playbackStarted)
             }
 
@@ -241,10 +245,14 @@ actor PlayerActor {
             await watchdog.cancel()
 
             let previous = reducer.state
+            let wasBuffering = previous == .buffering
             apply(.transportPaused)
 
             if previous != reducer.state,
                reducer.state == .paused {
+                if wasBuffering {
+                    emit(.bufferingEnded)
+                }
                 emit(.playbackPaused)
             }
         }

@@ -139,7 +139,8 @@ public struct PlaybackStateReducer: Sendable {
         case .bufferingStarted:
             guard state == .playing ||
                     state == .ready ||
-                    state == .paused
+                    state == .paused ||
+                    state == .ended
             else {
                 return state
             }
