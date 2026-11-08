@@ -30,7 +30,7 @@ actor PlayerActor {
     private let watchdog: PlaybackWatchdog
     private let transportEventContinuation:
         AsyncStream<PlayerActorEvent>.Continuation
-    private var transportEventTask: Task<Void, Never>?
+    nonisolated private let transportEventTask: Task<Void, Never>
     
     // MARK: - State
     
