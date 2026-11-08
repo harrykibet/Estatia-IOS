@@ -16,7 +16,13 @@ public final class PlayerManager {
     private let poolEnvironmentMonitor = PlayerPoolEnvironmentMonitor()
     private let audioSession = AudioSessionManager()
     private let mediaSessionProvider = MediaSessionProvider()
-    
+    private let bitrateController = DynamicBitrateController()
+    private var bitrateTask: Task<Void, Never>?
+    private var poolEnvironment = PlayerPoolEnvironment(
+        physicalMemoryMB: Int(ProcessInfo.processInfo.physicalMemory / (1_024 * 1_024))
+    )
+    private var activeContentType: PlaybackContentType = .onDemand
+
     public private(set) var activeMediaId: String?
     
     public init() {
@@ -85,6 +91,7 @@ public final class PlayerManager {
     public func start() {
 
         poolEnvironmentMonitor.start { [weak self] environment in
+            self?.poolEnvironment = environment
             self?.pool.updateEnvironment(environment)
         }
 
@@ -108,7 +115,8 @@ public final class PlayerManager {
         mediaId: String,
         source: MediaSource,
         title: String? = nil,
-        artist: String? = nil
+        artist: String? = nil,
+        contentType: PlaybackContentType = .onDemand
     ) async throws {
         
         mediaSessionProvider.configureNowPlaying(
@@ -122,12 +130,19 @@ public final class PlayerManager {
             mediaId: mediaId,
             source: source
         )
-        
+
         activeMediaId = orchestrator.activeMediaId
+        activeContentType = contentType
+        await startBitrateMonitoring(
+            mediaId: mediaId,
+            contentType: contentType
+        )
     }
     
     public func pause() async {
-        
+
+        bitrateTask?.cancel()
+        bitrateTask = nil
         await orchestrator.pauseCurrent()
         
         audioSession.abandon()
@@ -153,10 +168,66 @@ public final class PlayerManager {
         )
     }
     
+    private func startBitrateMonitoring(
+        mediaId: String,
+        contentType: PlaybackContentType
+    ) async {
+        bitrateTask?.cancel()
+        bitrateTask = nil
+
+        guard let events = await orchestrator.observeEvents(mediaId: mediaId),
+              let provider = await orchestrator.avPlayerProvider(mediaId: mediaId)
+        else {
+            return
+        }
+
+        let controller = bitrateController
+        let network = networkMonitor
+
+        bitrateTask = Task { @MainActor [weak self] in
+            for await event in events {
+                guard !Task.isCancelled,
+                      let self,
+                      self.activeMediaId == mediaId
+                else {
+                    return
+                }
+
+                guard case let .progress(progress) = event else {
+                    continue
+                }
+
+                let snapshot = network.currentSnapshot
+                let loadedEnd = progress.buffered ?? progress.currentTime
+                let bufferAhead = max(0, loadedEnd - progress.currentTime)
+                let environment = self.poolEnvironment
+
+                // AVPlayer access-log observations provide a device-measured
+                // bitrate estimate. When no access-log sample exists, the
+                // policy uses its conservative default throughput.
+                let input = BitratePolicyInput(
+                    estimatedThroughputBps: provider.observedBitrateBps,
+                    bufferAheadSeconds: bufferAhead,
+                    thermalState: environment.thermalState,
+                    isLowPowerModeEnabled: environment.isLowPowerModeEnabled,
+                    isMetered: snapshot.isExpensive,
+                    isConstrained: snapshot.isConstrained,
+                    contentType: contentType,
+                    isStartup: progress.currentTime < 5
+                )
+
+                controller.apply(input, to: provider)
+            }
+        }
+    }
+
     public func shutdown() async {
         
         networkRecovery.stop()
         poolEnvironmentMonitor.stop()
+        bitrateTask?.cancel()
+        bitrateTask = nil
+        bitrateController.resetAll()
 
         audioSession.cleanup()
         
