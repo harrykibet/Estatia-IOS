@@ -425,6 +425,30 @@ final class AVPlayerWrapper:
         queue.sync { player }
     }
 
+    // MARK: - Bitrate
+
+    /// Access-log reads and AVPlayerItem mutations are serialized with the
+    /// wrapper's AVFoundation queue.
+    @MainActor
+    func observedBitrateBps() -> Double? {
+        queue.sync {
+            guard let event = playerItem?.accessLog()?.events.last(where: {
+                $0.observedBitrate.isFinite && $0.observedBitrate > 0
+            }) else {
+                return nil
+            }
+            return event.observedBitrate
+        }
+    }
+
+    @MainActor
+    func setPreferredPeakBitRate(_ bitrateBps: Double) {
+        let safeBitrate = bitrateBps.isFinite ? max(0, bitrateBps) : 0
+        queue.async { [weak self] in
+            self?.playerItem?.preferredPeakBitRate = safeBitrate
+        }
+    }
+
     // MARK: - Playback
 
     func play() {
