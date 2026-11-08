@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreModel
+import CoreAppData
 
 public struct UserProfileView: View {
     @StateObject private var viewModel: ProfileViewModel
