@@ -387,6 +387,67 @@ final class PlayerPoolTests: XCTestCase {
         )
     }
 
+    func testReleaseCancelsInFlightLoadAndPreventsReacquisition() async throws {
+        let gate = ManualAsyncGate()
+        let engine = FakePlayerEngine()
+        engine.loadGate = gate
+
+        let pool = PlayerPool(
+            configuration: PlayerPoolConfiguration(
+                maxPlayers: 2,
+                maxIdlePlayers: 1
+            ),
+            factory: { engine }
+        )
+
+        let source = makeSource("loading")
+        let acquisition = Task {
+            try await pool.getOrCreate(
+                mediaId: "loading",
+                source: source
+            )
+        }
+
+        await waitUntil { gate.isWaiting }
+
+        let release = Task { @MainActor in
+            await pool.release(mediaId: "loading")
+        }
+
+        await waitUntil {
+            pool.releasingMediaIds.contains("loading")
+        }
+
+        do {
+            _ = try await pool.getOrCreate(
+                mediaId: "loading",
+                source: source
+            )
+            XCTFail("A media ID under release must not be reacquired.")
+        } catch let error as PlayerPoolError {
+            XCTAssertEqual(error, .releaseInProgress)
+        } catch {
+            XCTFail("Unexpected error: \\(error)")
+        }
+
+        gate.resume()
+        await release.value
+
+        do {
+            _ = try await acquisition.value
+            XCTFail("The cancelled acquisition must not succeed.")
+        } catch is CancellationError {
+            // Expected cancellation caused by release(mediaId:).
+        }
+
+        XCTAssertEqual(engine.releaseCount, 1)
+        XCTAssertEqual(pool.activeCount, 0)
+        XCTAssertEqual(pool.idleCount, 0)
+        XCTAssertEqual(pool.retainedPlayerCount, 0)
+        XCTAssertEqual(pool.inFlightCreationCount, 0)
+        XCTAssertFalse(pool.releasingMediaIds.contains("loading"))
+    }
+
     func testFailedLoadDiscardsTerminallyReleasedEngine() async throws {
         var created: [FakePlayerEngine] = []
 
