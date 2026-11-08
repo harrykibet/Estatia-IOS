@@ -72,11 +72,13 @@ final class PlayerActorTests: XCTestCase {
 
         func release() {}
 
+        @MainActor
         func emitReady() {
             let handler = withLock { readyHandler }
             handler?()
         }
 
+        @MainActor
         func emitTransportStatus(_ status: PlayerTransportStatus) {
             let handler = withLock { transportHandler }
             handler?(status)
@@ -114,33 +116,42 @@ final class PlayerActorTests: XCTestCase {
                 source: source
             )
         )
-        XCTAssertEqual(await states.next(), .loading)
+        let loadingState = await states.next()
+        XCTAssertEqual(loadingState, .loading)
 
         transport.emitReady()
-        XCTAssertEqual(await states.next(), .ready)
+        let readyState = await states.next()
+        XCTAssertEqual(readyState, .ready)
 
         try await actor.handle(.play)
 
         XCTAssertEqual(transport.playCount, 1)
-        XCTAssertEqual(await actor.currentState, .ready)
+        let stateAfterPlayRequest = await actor.currentState
+        XCTAssertEqual(stateAfterPlayRequest, .ready)
 
         transport.emitTransportStatus(.waiting)
-        XCTAssertEqual(await states.next(), .buffering)
+        let bufferingState = await states.next()
+        XCTAssertEqual(bufferingState, .buffering)
 
         transport.emitTransportStatus(.playing)
-        XCTAssertEqual(await states.next(), .playing)
-        XCTAssertEqual(await actor.currentState, .playing)
+        let playingState = await states.next()
+        XCTAssertEqual(playingState, .playing)
+        let currentPlayingState = await actor.currentState
+        XCTAssertEqual(currentPlayingState, .playing)
 
         try await actor.handle(.pause)
 
         XCTAssertEqual(transport.pauseCount, 1)
-        XCTAssertEqual(await actor.currentState, .playing)
+        let stateAfterPauseRequest = await actor.currentState
+        XCTAssertEqual(stateAfterPauseRequest, .playing)
 
         transport.emitTransportStatus(.paused)
-        XCTAssertEqual(await states.next(), .paused)
-        XCTAssertEqual(await actor.currentState, .paused)
+        let pausedState = await states.next()
+        XCTAssertEqual(pausedState, .paused)
+        let currentPausedState = await actor.currentState
+        XCTAssertEqual(currentPausedState, .paused)
 
-        await actor.handle(.release)
+        try await actor.handle(.release)
     }
 
     func testPauseDuringBufferingWaitsForPausedTransportConfirmation() async throws {
@@ -160,20 +171,25 @@ final class PlayerActorTests: XCTestCase {
         )
 
         try await actor.handle(.load(source))
-        XCTAssertEqual(await states.next(), .loading)
+        let loadingState = await states.next()
+        XCTAssertEqual(loadingState, .loading)
 
         transport.emitReady()
-        XCTAssertEqual(await states.next(), .ready)
+        let readyState = await states.next()
+        XCTAssertEqual(readyState, .ready)
 
         try await actor.handle(.play)
         transport.emitTransportStatus(.waiting)
-        XCTAssertEqual(await states.next(), .buffering)
+        let bufferingState = await states.next()
+        XCTAssertEqual(bufferingState, .buffering)
 
         try await actor.handle(.pause)
-        XCTAssertEqual(await actor.currentState, .buffering)
+        let stateAfterBufferingPauseRequest = await actor.currentState
+        XCTAssertEqual(stateAfterBufferingPauseRequest, .buffering)
 
         transport.emitTransportStatus(.paused)
-        XCTAssertEqual(await states.next(), .paused)
+        let pausedState = await states.next()
+        XCTAssertEqual(pausedState, .paused)
 
         await actor.handle(.release)
     }

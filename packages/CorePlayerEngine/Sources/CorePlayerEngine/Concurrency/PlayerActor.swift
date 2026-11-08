@@ -45,7 +45,7 @@ actor PlayerActor {
     
     init(
         config: PlayerConfiguration,
-        player: AVPlayerWrapper,
+        player: PlayerTransport,
         watchdog: PlaybackWatchdog,
         stateEmitter: PlayerEventEmitter<PlayerState>,
         eventEmitter: PlayerEventEmitter<PlayerEvent>
