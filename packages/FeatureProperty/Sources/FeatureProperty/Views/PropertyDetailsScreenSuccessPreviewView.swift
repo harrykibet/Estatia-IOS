@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/property/src/main/java/com/estatia/realestate/apps/feature/property/ui/screens/PropertyDetailsScreen.kt composable PropertyDetailsScreenSuccessPreview
 import SwiftUI
+import CoreDesignSystem
 
 public struct PropertyDetailsScreenSuccessPreviewView: View {
     @StateObject public var viewModel = PropertyDetailsScreenSuccessPreviewViewModel()
