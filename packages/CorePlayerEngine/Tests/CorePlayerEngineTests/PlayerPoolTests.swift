@@ -427,7 +427,7 @@ final class PlayerPoolTests: XCTestCase {
         } catch let error as PlayerPoolError {
             XCTAssertEqual(error, .releaseInProgress)
         } catch {
-            XCTFail("Unexpected error: \\(error)")
+            XCTFail("Unexpected error: \(error)")
         }
 
         gate.resume()
