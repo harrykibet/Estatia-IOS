@@ -13,6 +13,7 @@ public final class PlayerManager {
     private let networkRecovery: NetworkRecoveryCoordinator
     
     private let environmentManager = EnvironmentManager()
+    private let poolEnvironmentMonitor = PlayerPoolEnvironmentMonitor()
     private let audioSession = AudioSessionManager()
     private let mediaSessionProvider = MediaSessionProvider()
     
@@ -82,7 +83,11 @@ public final class PlayerManager {
     }
     
     public func start() {
-        
+
+        poolEnvironmentMonitor.start { [weak self] environment in
+            self?.pool.updateEnvironment(environment)
+        }
+
         networkRecovery.start()
         
         environmentManager.start(
@@ -151,7 +156,8 @@ public final class PlayerManager {
     public func shutdown() async {
         
         networkRecovery.stop()
-        
+        poolEnvironmentMonitor.stop()
+
         audioSession.cleanup()
         
         await orchestrator.shutdown()

@@ -47,6 +47,11 @@ public final class PlayerPool {
     private let configuration:
         PlayerPoolConfiguration
 
+    private let sizingPolicy:
+        PlayerPoolSizingPolicy
+
+    private var effectiveMaxPlayers: Int
+
     private let makeEngine:
         @MainActor () -> PlayerEngine
 
@@ -88,6 +93,11 @@ public final class PlayerPool {
     private var inFlightReleases:
         [String: Task<Void, Never>] = [:]
 
+    /// Idle engines removed by an environment-driven capacity reduction.
+    /// Kept in the pool's retained count until terminal release completes.
+    private var inFlightDisposals:
+        [UUID: Task<Void, Never>] = [:]
+
     private(set) var releasingMediaIds: Set<String> = []
 
     // MARK: - Lifecycle
@@ -100,9 +110,12 @@ public final class PlayerPool {
 
     public init(
         configuration: PlayerPoolConfiguration = PlayerPoolConfiguration(),
+        sizingPolicy: PlayerPoolSizingPolicy = PlayerPoolSizingPolicy(),
         factory: @escaping @MainActor () -> PlayerEngine
     ) {
         self.configuration = configuration
+        self.sizingPolicy = sizingPolicy
+        self.effectiveMaxPlayers = configuration.maxPlayers
         self.makeEngine = factory
     }
 
@@ -111,10 +124,12 @@ public final class PlayerPool {
     /// Tests and alternative integrations should inject a factory through
     /// the designated initializer to keep player construction deterministic.
     public convenience init(
-        configuration: PlayerPoolConfiguration = PlayerPoolConfiguration()
+        configuration: PlayerPoolConfiguration = PlayerPoolConfiguration(),
+        sizingPolicy: PlayerPoolSizingPolicy = PlayerPoolSizingPolicy()
     ) {
         self.init(
             configuration: configuration,
+            sizingPolicy: sizingPolicy,
             factory: {
                 PlayerEngineFactory.make()
             }
@@ -359,7 +374,8 @@ public final class PlayerPool {
 
         managed.markIdle()
 
-        if idlePlayers.count < configuration.maxIdlePlayers {
+        if idlePlayers.count < configuration.maxIdlePlayers &&
+            allPlayers.count <= effectiveMaxPlayers {
             idlePlayers.append(managed)
         } else {
             try? await managed.perform {
@@ -384,6 +400,7 @@ public final class PlayerPool {
 
         let pendingCreations = Array(inFlightCreations.values)
         let pendingReleases = Array(inFlightReleases.values)
+        let pendingDisposals = Array(inFlightDisposals.values)
 
         for task in pendingCreations {
             task.cancel()
@@ -392,7 +409,8 @@ public final class PlayerPool {
         let task = Task { @MainActor [self] in
             await finishReleaseAll(
                 pendingCreations: pendingCreations,
-                pendingReleases: pendingReleases
+                pendingReleases: pendingReleases,
+                pendingDisposals: pendingDisposals
             )
         }
 
@@ -402,7 +420,8 @@ public final class PlayerPool {
 
     private func finishReleaseAll(
         pendingCreations: [Task<ManagedPlayer, Error>],
-        pendingReleases: [Task<Void, Never>]
+        pendingReleases: [Task<Void, Never>],
+        pendingDisposals: [Task<Void, Never>]
     ) async {
         // A creation may be suspended inside load(), and a release may be
         // suspended inside stop(). Both must finish before terminal disposal.
@@ -411,6 +430,10 @@ public final class PlayerPool {
         }
 
         for task in pendingReleases {
+            await task.value
+        }
+
+        for task in pendingDisposals {
             await task.value
         }
 
@@ -460,6 +483,50 @@ public final class PlayerPool {
         }
     }
 
+    // MARK: - Environment
+
+    /// Updates the pool's allocation ceiling without interrupting pinned or
+    /// currently playing items. Excess idle engines are released immediately;
+    /// active engines are retired naturally when their owners release them.
+    /// Subsequent acquisitions cannot grow beyond the newly calculated limit.
+    public func updateEnvironment(
+        _ environment: PlayerPoolEnvironment
+    ) {
+        guard !isDraining else { return }
+        effectiveMaxPlayers = sizingPolicy.calculateMaxPlayers(
+            environment: environment,
+            configuredMaximum: configuration.maxPlayers
+        )
+
+        // Retire excess idle engines immediately. Active and pinned media are
+        // left undisturbed; they are retired naturally when their owners release.
+        let idleLimit = min(
+            configuration.maxIdlePlayers,
+            max(0, effectiveMaxPlayers - activePlayers.count)
+        )
+        let excessCount = max(0, idlePlayers.count - idleLimit)
+        guard excessCount > 0 else { return }
+
+        let excessPlayers = Array(idlePlayers.suffix(excessCount))
+        idlePlayers.removeLast(excessCount)
+
+        let disposalID = UUID()
+        let disposalTask = Task { @MainActor [weak self] in
+            for managed in excessPlayers {
+                try? await managed.perform {
+                    try await managed.engine.release()
+                }
+                self?.removeFromPool(managed)
+            }
+            self?.inFlightDisposals.removeValue(forKey: disposalID)
+        }
+        inFlightDisposals[disposalID] = disposalTask
+    }
+
+    public var maxRetainedPlayers: Int {
+        effectiveMaxPlayers
+    }
+
     // MARK: - Snapshot
 
     public func activePlayersSnapshot()
@@ -496,7 +563,7 @@ public final class PlayerPool {
 
         // 2. Create if capacity exists.
         if allPlayers.count <
-            configuration.maxPlayers {
+            effectiveMaxPlayers {
 
             let managed =
                 ManagedPlayer(
