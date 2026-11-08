@@ -4,6 +4,29 @@ import XCTest
 @MainActor
 final class PlayerPoolTests: XCTestCase {
 
+    @MainActor
+    final class ManualAsyncGate {
+        private var continuation: CheckedContinuation<Void, Never>?
+        private(set) var isWaiting = false
+
+        func wait() async {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                isWaiting = true
+            }
+        }
+
+        func resume() {
+            guard let continuation else {
+                return
+            }
+
+            self.continuation = nil
+            isWaiting = false
+            continuation.resume()
+        }
+    }
+
     // MARK: - Fake Engine
 
     final class FakePlayerEngine: PlayerEngine {
@@ -20,6 +43,14 @@ final class PlayerPoolTests: XCTestCase {
         private(set) var pauseCount = 0
         private(set) var stopCount = 0
         private(set) var releaseCount = 0
+
+        var loadGate: ManualAsyncGate?
+        var stopGate: ManualAsyncGate?
+        var failLoad = false
+
+        enum FakeEngineError: Error {
+            case loadFailed
+        }
 
         init() {
 
@@ -49,9 +80,17 @@ final class PlayerPoolTests: XCTestCase {
         func load(_ source: MediaSource) async throws {
             loadCount += 1
 
-            // Force a suspension point so concurrent pool callers
-            // can exercise pool serialization.
-            await Task.yield()
+            // A manually controlled gate lets lifecycle tests hold a load
+            // across releaseAll() without relying on timing or sleeps.
+            if let loadGate {
+                await loadGate.wait()
+            } else {
+                await Task.yield()
+            }
+
+            if failLoad {
+                throw FakeEngineError.loadFailed
+            }
 
             stateContinuation?.yield(.ready)
         }
@@ -78,6 +117,11 @@ final class PlayerPoolTests: XCTestCase {
 
         func stop() async throws {
             stopCount += 1
+
+            if let stopGate {
+                await stopGate.wait()
+            }
+
             stateContinuation?.yield(.idle)
         }
 
@@ -108,6 +152,26 @@ final class PlayerPoolTests: XCTestCase {
                 nil
             }
         }
+    }
+
+    private func waitUntil(
+        _ condition: @MainActor () -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0..<1_000 {
+            if condition() {
+                return
+            }
+
+            await Task.yield()
+        }
+
+        XCTFail(
+            "Timed out waiting for the expected pool lifecycle state.",
+            file: file,
+            line: line
+        )
     }
 
     private func makeSource(
@@ -321,6 +385,218 @@ final class PlayerPoolTests: XCTestCase {
         XCTAssertTrue(
             firstPlayer.engine === secondPlayer.engine
         )
+    }
+
+    func testReleaseCancelsInFlightLoadAndPreventsReacquisition() async throws {
+        let gate = ManualAsyncGate()
+        let engine = FakePlayerEngine()
+        engine.loadGate = gate
+
+        let pool = PlayerPool(
+            configuration: PlayerPoolConfiguration(
+                maxPlayers: 2,
+                maxIdlePlayers: 1
+            ),
+            factory: { engine }
+        )
+
+        let source = makeSource("loading")
+        let acquisition = Task {
+            try await pool.getOrCreate(
+                mediaId: "loading",
+                source: source
+            )
+        }
+
+        await waitUntil { gate.isWaiting }
+
+        let release = Task { @MainActor in
+            await pool.release(mediaId: "loading")
+        }
+
+        await waitUntil {
+            pool.releasingMediaIds.contains("loading")
+        }
+
+        do {
+            _ = try await pool.getOrCreate(
+                mediaId: "loading",
+                source: source
+            )
+            XCTFail("A media ID under release must not be reacquired.")
+        } catch let error as PlayerPoolError {
+            XCTAssertEqual(error, .releaseInProgress)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        gate.resume()
+        await release.value
+
+        do {
+            _ = try await acquisition.value
+            XCTFail("The cancelled acquisition must not succeed.")
+        } catch is CancellationError {
+            // Expected cancellation caused by release(mediaId:).
+        }
+
+        XCTAssertEqual(engine.releaseCount, 1)
+        XCTAssertEqual(pool.activeCount, 0)
+        XCTAssertEqual(pool.idleCount, 0)
+        XCTAssertEqual(pool.retainedPlayerCount, 0)
+        XCTAssertEqual(pool.inFlightCreationCount, 0)
+        XCTAssertFalse(pool.releasingMediaIds.contains("loading"))
+    }
+
+    func testFailedLoadDiscardsTerminallyReleasedEngine() async throws {
+        var created: [FakePlayerEngine] = []
+
+        let pool = PlayerPool(
+            configuration: PlayerPoolConfiguration(
+                maxPlayers: 2,
+                maxIdlePlayers: 1
+            ),
+            factory: {
+                let engine = FakePlayerEngine()
+                engine.failLoad = created.isEmpty
+                created.append(engine)
+                return engine
+            }
+        )
+
+        do {
+            _ = try await pool.getOrCreate(
+                mediaId: "first",
+                source: makeSource("first")
+            )
+            XCTFail("Expected the first engine load to fail.")
+        } catch FakePlayerEngine.FakeEngineError.loadFailed {
+            // Expected. The failed engine must be disposed, not cached.
+        }
+
+        XCTAssertEqual(created.count, 1)
+        XCTAssertEqual(created[0].releaseCount, 1)
+        XCTAssertEqual(pool.retainedPlayerCount, 0)
+        XCTAssertEqual(pool.idleCount, 0)
+
+        let second = try await pool.getOrCreate(
+            mediaId: "second",
+            source: makeSource("second")
+        )
+
+        XCTAssertEqual(created.count, 2)
+        XCTAssertTrue(second.engine === created[1])
+        XCTAssertEqual(created[0].releaseCount, 1)
+    }
+
+    func testReleaseAllWaitsForInFlightLoadAndReleasesExactlyOnce() async throws {
+        let gate = ManualAsyncGate()
+        let engine = FakePlayerEngine()
+        engine.loadGate = gate
+
+        let pool = PlayerPool(
+            configuration: PlayerPoolConfiguration(
+                maxPlayers: 2,
+                maxIdlePlayers: 1
+            ),
+            factory: { engine }
+        )
+
+        let source = makeSource("loading")
+        let acquisition = Task {
+            try await pool.getOrCreate(
+                mediaId: "loading",
+                source: source
+            )
+        }
+
+        await waitUntil { gate.isWaiting }
+
+        let drain = Task { @MainActor in
+            await pool.releaseAll()
+        }
+
+        await waitUntil { pool.isDraining }
+        XCTAssertEqual(engine.releaseCount, 0)
+
+        // The fake intentionally ignores task cancellation until its load
+        // completes. The pool must wait, then perform exactly one terminal
+        // release itself.
+        gate.resume()
+        await drain.value
+
+        do {
+            _ = try await acquisition.value
+            XCTFail("An acquisition invalidated by releaseAll() must not succeed.")
+        } catch is CancellationError {
+            // Expected cancellation from the pool drain.
+        }
+
+        XCTAssertEqual(engine.releaseCount, 1)
+        XCTAssertEqual(pool.activeCount, 0)
+        XCTAssertEqual(pool.idleCount, 0)
+        XCTAssertEqual(pool.retainedPlayerCount, 0)
+        XCTAssertEqual(pool.inFlightCreationCount, 0)
+        XCTAssertFalse(pool.isDraining)
+    }
+
+    func testReleaseAllWaitsForInFlightStopAndConcurrentCallersJoinDrain() async throws {
+        let gate = ManualAsyncGate()
+        let engine = FakePlayerEngine()
+        engine.stopGate = gate
+
+        let pool = PlayerPool(
+            configuration: PlayerPoolConfiguration(
+                maxPlayers: 2,
+                maxIdlePlayers: 1
+            ),
+            factory: { engine }
+        )
+
+        _ = try await pool.getOrCreate(
+            mediaId: "one",
+            source: makeSource("one")
+        )
+
+        let release = Task { @MainActor in
+            await pool.release(mediaId: "one")
+        }
+
+        await waitUntil { gate.isWaiting }
+
+        let firstDrain = Task { @MainActor in
+            await pool.releaseAll()
+        }
+
+        await waitUntil { pool.isDraining }
+
+        var secondDrainStarted = false
+        var secondDrainCompleted = false
+
+        let secondDrain = Task { @MainActor in
+            secondDrainStarted = true
+            await pool.releaseAll()
+            secondDrainCompleted = true
+        }
+
+        await waitUntil { secondDrainStarted }
+        XCTAssertFalse(secondDrainCompleted)
+        XCTAssertEqual(engine.releaseCount, 0)
+
+        // stop() must complete before releaseAll() can call release().
+        gate.resume()
+
+        await release.value
+        await firstDrain.value
+        await secondDrain.value
+
+        XCTAssertTrue(secondDrainCompleted)
+        XCTAssertEqual(engine.stopCount, 1)
+        XCTAssertEqual(engine.releaseCount, 1)
+        XCTAssertEqual(pool.activeCount, 0)
+        XCTAssertEqual(pool.idleCount, 0)
+        XCTAssertEqual(pool.retainedPlayerCount, 0)
+        XCTAssertFalse(pool.isDraining)
     }
 
     func testReleaseAllReleasesEveryPlayer() async {
