@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/auth/src/main/java/com/estatia/realestate/apps/feature/auth/ui/screens/SignUpScreen.kt composable SignUpScreen
 import SwiftUI
+import CoreDesignSystem
 
 public struct SignUpScreenView: View {
     @StateObject public var viewModel = SignUpScreenViewModel()
