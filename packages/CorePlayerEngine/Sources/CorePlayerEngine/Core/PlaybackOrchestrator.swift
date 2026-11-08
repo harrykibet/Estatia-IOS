@@ -28,33 +28,34 @@ import Foundation
 /// Those belong to specialized components.
 @MainActor
 public final class PlaybackOrchestrator {
-    
+
     // MARK: - Dependencies
-    
+
     private let pool: PlayerPool
     private let streamingPipeline: StreamingPipeline
-    
+
     // MARK: - State
-    
+
     public private(set) var activeMediaId: String?
-    
-    /// Monotonically increasing request generation.
-    ///
-    /// Every play request captures its generation. If a newer request arrives
-    /// while the previous request is suspended on an async operation, the
-    /// previous request becomes stale and is forbidden from taking playback
-    /// ownership.
+
+    /// Identifies the most recently requested media while acquisition or
+    /// transport commands are still in flight. This lets a later request
+    /// supersede an earlier request before it becomes the committed owner.
+    private var pendingMediaId: String?
+
+    /// Monotonically increasing request generation. Every user playback
+    /// command that changes ownership invalidates older suspended work.
     private var playGeneration: UInt64 = 0
-    
+
     private struct ActivePlayback: Sendable {
         let mediaId: String
         let source: MediaSource
     }
-    
+
     private var activePlayback: ActivePlayback?
-    
+
     // MARK: - Init
-    
+
     public init(
         pool: PlayerPool,
         streamingPipeline: StreamingPipeline
@@ -62,223 +63,303 @@ public final class PlaybackOrchestrator {
         self.pool = pool
         self.streamingPipeline = streamingPipeline
     }
-    
+
     // MARK: - Play
-    
+
     public func play(
         mediaId: String,
         source: MediaSource
     ) async throws {
-        
+
         playGeneration &+= 1
-        
+
         let generation = playGeneration
-        
-        // Stop the previous logical owner first.
-        if let previousMediaId = activeMediaId,
-           previousMediaId != mediaId {
-            
-            if let previous = await pool.get(
-                mediaId: previousMediaId
-            ) {
-                try? await previous.engine.pause()
+        let previousMediaId = pendingMediaId ?? activeMediaId
+        pendingMediaId = mediaId
+
+        do {
+            // Stop the previous logical owner first. A per-player operation
+            // queue ensures this pause cannot overtake an earlier play/stop.
+            if let previousMediaId,
+               previousMediaId != mediaId,
+               let previous = await pool.get(mediaId: previousMediaId) {
+
+                try requireCurrentGeneration(generation)
+
+                try? await previous.perform {
+                    try await previous.engine.pause()
+                }
+
+                try requireCurrentGeneration(generation)
             }
+
+            let managed = try await pool.getOrCreate(
+                mediaId: mediaId,
+                source: source
+            )
+
+            // Do not issue commands through a stale ManagedPlayer reference:
+            // the pool may have recycled that same object for another media ID.
+            try requireCurrentGeneration(generation)
+
+            guard managed.mediaId == mediaId else {
+                throw CancellationError()
+            }
+
+            try await managed.perform {
+                try await managed.engine.play()
+            }
+
+            // If a newer request arrived while play() was suspended, leave
+            // correction to the newer request's serialized command sequence.
+            // Issuing a stale pause here could pause a newly reused engine.
+            try requireCurrentGeneration(generation)
+
+            guard managed.mediaId == mediaId else {
+                throw CancellationError()
+            }
+
+            activePlayback = ActivePlayback(
+                mediaId: mediaId,
+                source: source
+            )
+
+            activeMediaId = mediaId
+            pendingMediaId = nil
+
+            await streamingPipeline.warm(
+                mediaId: mediaId,
+                source: source,
+                priority: .visible
+            )
+        } catch {
+            if generation == playGeneration,
+               pendingMediaId == mediaId {
+                pendingMediaId = nil
+            }
+
+            throw error
         }
-        
-        let managed = try await pool.getOrCreate(
-            mediaId: mediaId,
-            source: source
-        )
-        
-        // A newer play request arrived while acquiring/loading this player.
-        guard generation == playGeneration else {
-            
-            try? await managed.engine.pause()
-            
-            throw CancellationError()
-        }
-        
-        try await managed.engine.play()
-        
-        // Check again because `play()` itself suspends.
-        guard generation == playGeneration else {
-            
-            try? await managed.engine.pause()
-            
-            throw CancellationError()
-        }
-        
-        activePlayback = ActivePlayback(
-            mediaId: mediaId,
-            source: source
-        )
-        
-        activeMediaId = mediaId
-        
-        await streamingPipeline.warm(
-            mediaId: mediaId,
-            source: source,
-            priority: .visible
-        )
     }
-    
+
     // MARK: - Preload
-    
+
     public func preload(
         mediaId: String,
         source: MediaSource
     ) async {
-        
         _ = await pool.prewarm(
             mediaId: mediaId,
             source: source
         )
     }
-    
+
     // MARK: - Pause
-    
+
     public func pauseCurrent() async {
-        
-        // Invalidate any pending play request.
+
+        // Invalidate pending play/recovery work before looking up the target.
         playGeneration &+= 1
-        
-        guard let activeMediaId else {
+
+        let mediaId = pendingMediaId ?? activeMediaId
+        pendingMediaId = nil
+
+        guard let mediaId else {
             return
         }
-        
-        guard let managed = await pool.get(
-            mediaId: activeMediaId
-        ) else {
+
+        guard let managed = await pool.get(mediaId: mediaId),
+              managed.mediaId == mediaId
+        else {
             return
         }
-        
-        try? await managed.engine.pause()
+
+        try? await managed.perform {
+            try await managed.engine.pause()
+        }
     }
-    
+
     // MARK: - Resume
-    
+
     public func resumeCurrent() async throws {
-        
-        guard let activeMediaId else {
+
+        let generation = playGeneration
+
+        guard pendingMediaId == nil,
+              let mediaId = activeMediaId
+        else {
             return
         }
-        
-        guard let managed = await pool.get(
-            mediaId: activeMediaId
-        ) else {
+
+        guard let managed = await pool.get(mediaId: mediaId) else {
             return
         }
-        
-        try await managed.engine.play()
+
+        try requireCurrentGeneration(generation)
+
+        guard activeMediaId == mediaId,
+              managed.mediaId == mediaId
+        else {
+            throw CancellationError()
+        }
+
+        try await managed.perform {
+            try await managed.engine.play()
+        }
+
+        try requireCurrentGeneration(generation)
+
+        guard activeMediaId == mediaId,
+              managed.mediaId == mediaId
+        else {
+            throw CancellationError()
+        }
     }
-    
+
     // MARK: - Stop
-    
+
     public func stopCurrent() async {
-        
+
         playGeneration &+= 1
-        
-        guard let activeMediaId else {
+        let generation = playGeneration
+
+        let mediaId = pendingMediaId ?? activeMediaId
+        pendingMediaId = nil
+
+        guard let mediaId else {
+            activeMediaId = nil
             activePlayback = nil
             return
         }
-        
-        guard let managed = await pool.get(
-            mediaId: activeMediaId
-        ) else {
-            self.activeMediaId = nil
-            self.activePlayback = nil
+
+        guard let managed = await pool.get(mediaId: mediaId) else {
+            guard generation == playGeneration else {
+                return
+            }
+
+            activeMediaId = nil
+            activePlayback = nil
             return
         }
-        
-        try? await managed.engine.stop()
-        
-        self.activeMediaId = nil
-        self.activePlayback = nil
+
+        guard generation == playGeneration,
+              managed.mediaId == mediaId
+        else {
+            return
+        }
+
+        try? await managed.perform {
+            try await managed.engine.stop()
+        }
+
+        // stop() can suspend. A newer play request may have taken ownership
+        // during that suspension, so the old completion must not clear it.
+        guard generation == playGeneration else {
+            return
+        }
+
+        activeMediaId = nil
+        activePlayback = nil
+        pendingMediaId = nil
     }
-    
+
     // MARK: - Release
-    
+
     public func release(
         mediaId: String
     ) async {
-        
-        if activeMediaId == mediaId {
+
+        if activeMediaId == mediaId ||
+           pendingMediaId == mediaId {
             playGeneration &+= 1
-            activeMediaId = nil
-            activePlayback = nil
+            pendingMediaId = nil
+
+            if activeMediaId == mediaId {
+                activeMediaId = nil
+                activePlayback = nil
+            }
         }
-        
-        await pool.release(
-            mediaId: mediaId
-        )
+
+        await pool.release(mediaId: mediaId)
     }
-    
+
     // MARK: - State
-    
+
     public func observeState(
         mediaId: String
     ) async -> AsyncStream<PlayerState>? {
-        
-        guard let managed = await pool.get(
-            mediaId: mediaId
-        ) else {
+
+        guard let managed = await pool.get(mediaId: mediaId),
+              managed.mediaId == mediaId
+        else {
             return nil
         }
-        
+
         return managed.engine.state
     }
-    
+
     public func currentState(
         mediaId: String
     ) async -> PlayerState? {
-        
-        guard let managed = await pool.get(
-            mediaId: mediaId
-        ) else {
+
+        guard let managed = await pool.get(mediaId: mediaId),
+              managed.mediaId == mediaId
+        else {
             return nil
         }
-        
-        return await managed.engine.currentState
+
+        let state = await managed.engine.currentState
+
+        guard managed.mediaId == mediaId else {
+            return nil
+        }
+
+        return state
     }
-    
+
     public func isCurrentlyPlaying() async -> Bool {
-        
+
         guard let activeMediaId else {
             return false
         }
-        
+
         return await currentState(
             mediaId: activeMediaId
         ) == .playing
     }
-    
+
     public func isMediaActive(
         _ mediaId: String
     ) -> Bool {
-        
         activeMediaId == mediaId
     }
-    
+
     public func updateComposedMedia(
         _ mediaIds: Set<String>
     ) async {
-        
-        await pool.updatePinnedIds(
-            mediaIds
-        )
+        await pool.updatePinnedIds(mediaIds)
     }
-    
+
     // MARK: - Shutdown
-    
+
     public func shutdown() async {
-        
+
         playGeneration &+= 1
-        
+        pendingMediaId = nil
         activeMediaId = nil
         activePlayback = nil
-        
+
         await pool.releaseAll()
+    }
+
+    // MARK: - Request Validation
+
+    private func requireCurrentGeneration(
+        _ generation: UInt64
+    ) throws {
+        guard generation == playGeneration else {
+            throw CancellationError()
+        }
     }
 }
 
@@ -287,97 +368,140 @@ extension PlaybackOrchestrator: PlaybackRecoveryTarget {
 
     public func markNetworkUnavailable() async {
 
-        guard let activeMediaId else {
+        let generation = playGeneration
+
+        guard pendingMediaId == nil,
+              let mediaId = activeMediaId,
+              let managed = await pool.get(mediaId: mediaId)
+        else {
             return
         }
 
-        guard let managed = await pool.get(
-            mediaId: activeMediaId
-        ) else {
+        guard generation == playGeneration,
+              activeMediaId == mediaId,
+              managed.mediaId == mediaId
+        else {
             return
         }
 
         let state = await managed.engine.currentState
 
+        guard generation == playGeneration,
+              activeMediaId == mediaId,
+              managed.mediaId == mediaId
+        else {
+            return
+        }
+
         switch state {
-
-        case .playing,
-             .buffering,
-             .ready:
-
-            await managed.engine.notifyNetworkLost()
+        case .playing, .buffering, .ready:
+            try? await managed.perform {
+                await managed.engine.notifyNetworkLost()
+            }
 
         default:
             break
         }
     }
 
-    public func isActiveMediaReconnecting()
-        async -> Bool {
-
-        guard let activeMediaId else {
-            return false
-        }
-
-        guard let managed = await pool.get(
-            mediaId: activeMediaId
-        ) else {
-            return false
-        }
-
-        return await managed.engine.currentState
-            == .reconnecting
-    }
-
-    public func recoverActivePlayback()
-        async throws {
-
-        guard let activePlayback else {
-            return
-        }
-
-        guard let managed = await pool.get(
-            mediaId: activePlayback.mediaId
-        ) else {
-            return
-        }
+    public func isActiveMediaReconnecting() async -> Bool {
 
         let generation = playGeneration
 
-        try await managed.engine.load(
-            mediaId:
-                activePlayback.mediaId,
-            source:
-                activePlayback.source
-        )
+        guard pendingMediaId == nil,
+              let mediaId = activeMediaId,
+              let managed = await pool.get(mediaId: mediaId)
+        else {
+            return false
+        }
 
-        // A user action may have replaced the active item while
-        // recovery was awaiting the network.
-        guard generation == playGeneration else {
-            try? await managed.engine.pause()
+        guard generation == playGeneration,
+              activeMediaId == mediaId,
+              managed.mediaId == mediaId
+        else {
+            return false
+        }
+
+        let state = await managed.engine.currentState
+
+        guard generation == playGeneration,
+              activeMediaId == mediaId,
+              managed.mediaId == mediaId
+        else {
+            return false
+        }
+
+        return state == .reconnecting
+    }
+
+    public func recoverActivePlayback() async throws {
+
+        let generation = playGeneration
+
+        guard pendingMediaId == nil,
+              let playback = activePlayback,
+              activeMediaId == playback.mediaId
+        else {
+            return
+        }
+
+        guard let managed = await pool.get(mediaId: playback.mediaId) else {
+            return
+        }
+
+        try requireCurrentGeneration(generation)
+
+        guard activePlayback?.mediaId == playback.mediaId,
+              managed.mediaId == playback.mediaId
+        else {
             throw CancellationError()
         }
 
-        try await managed.engine.play()
+        // Recovery load and play are one serialized operation. A later play,
+        // pause, stop or release for this same engine waits behind it. The
+        // generation check between load and play prevents stale recovery from
+        // restarting an item after a newer user request.
+        try await managed.perform {
+            try await managed.engine.load(
+                mediaId: playback.mediaId,
+                source: playback.source
+            )
 
-        guard generation == playGeneration else {
-            try? await managed.engine.pause()
+            try self.requireCurrentGeneration(generation)
+
+            try await managed.engine.play()
+        }
+
+        try requireCurrentGeneration(generation)
+
+        guard activePlayback?.mediaId == playback.mediaId,
+              activeMediaId == playback.mediaId,
+              managed.mediaId == playback.mediaId
+        else {
             throw CancellationError()
         }
     }
 
     public func failActiveRecovery() async {
 
-        guard let activeMediaId else {
+        let generation = playGeneration
+
+        guard pendingMediaId == nil,
+              let mediaId = activeMediaId,
+              let managed = await pool.get(mediaId: mediaId)
+        else {
             return
         }
 
-        guard let managed = await pool.get(
-            mediaId: activeMediaId
-        ) else {
+        guard generation == playGeneration,
+              activeMediaId == mediaId,
+              managed.mediaId == mediaId
+        else {
             return
         }
 
-        await managed.engine.notifyRecoveryExhausted()
+        try? await managed.perform {
+            await managed.engine.notifyRecoveryExhausted()
+        }
     }
 }

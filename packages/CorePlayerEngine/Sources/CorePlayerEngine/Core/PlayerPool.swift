@@ -220,10 +220,12 @@ public final class PlayerPool {
         do {
             try Task.checkCancellation()
 
-            try await managed.engine.load(
-                mediaId: mediaId,
-                source: source
-            )
+            try await managed.perform {
+                try await managed.engine.load(
+                    mediaId: mediaId,
+                    source: source
+                )
+            }
 
             try Task.checkCancellation()
         } catch {
@@ -237,7 +239,9 @@ public final class PlayerPool {
                 throw CancellationError()
             }
 
-            try? await managed.engine.release()
+            try? await managed.perform {
+                try await managed.engine.release()
+            }
             removeFromPool(managed)
             throw error
         }
@@ -334,13 +338,17 @@ public final class PlayerPool {
         }
 
         do {
-            try await managed.engine.stop()
+            try await managed.perform {
+                try await managed.engine.stop()
+            }
         } catch {
             guard !isDraining, generation == lifecycleGeneration else {
                 return
             }
 
-            try? await managed.engine.release()
+            try? await managed.perform {
+                try await managed.engine.release()
+            }
             removeFromPool(managed)
             return
         }
@@ -354,7 +362,9 @@ public final class PlayerPool {
         if idlePlayers.count < configuration.maxIdlePlayers {
             idlePlayers.append(managed)
         } else {
-            try? await managed.engine.release()
+            try? await managed.perform {
+                try await managed.engine.release()
+            }
             removeFromPool(managed)
         }
     }
@@ -416,7 +426,9 @@ public final class PlayerPool {
         inFlightReleases.removeAll(keepingCapacity: false)
 
         for managed in players {
-            try? await managed.engine.release()
+            try? await managed.perform {
+                try await managed.engine.release()
+            }
             managed.markIdle()
         }
 
@@ -522,7 +534,9 @@ public final class PlayerPool {
         )
 
         do {
-            try await evictable.engine.stop()
+            try await evictable.perform {
+                try await evictable.engine.stop()
+            }
             try Task.checkCancellation()
         } catch {
             if Task.isCancelled && isDraining {
@@ -531,7 +545,9 @@ public final class PlayerPool {
                 throw CancellationError()
             }
 
-            try? await evictable.engine.release()
+            try? await evictable.perform {
+                try await evictable.engine.release()
+            }
             removeFromPool(evictable)
             return try await acquirePlayer()
         }

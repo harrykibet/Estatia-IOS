@@ -12,6 +12,13 @@ public final class ManagedPlayer {
     /// Monotonic logical access sequence used for deterministic LRU eviction.
     public private(set) var lastUsedSequence: UInt64
 
+    /// Serializes mutations against this engine while allowing independent
+    /// managed players to progress concurrently.
+    private var operationTail: Task<Void, Never>?
+
+    /// Includes running and queued operations; useful for pool diagnostics.
+    private(set) var pendingOperationCount = 0
+
     internal init(
         engine: PlayerEngine,
         mediaId: String? = nil
@@ -20,6 +27,32 @@ public final class ManagedPlayer {
         self.mediaId = mediaId
         self.pinned = false
         self.lastUsedSequence = 0
+    }
+
+    /// Runs a mutating engine operation after all earlier operations for this
+    /// managed player have completed. Errors are returned to the caller while
+    /// the queue tail itself always completes, so one failed command cannot
+    /// poison subsequent lifecycle operations.
+    internal func perform(
+        _ operation: @escaping @MainActor () async throws -> Void
+    ) async throws {
+        pendingOperationCount += 1
+        defer {
+            pendingOperationCount -= 1
+        }
+
+        let previousOperation = operationTail
+
+        let operationTask = Task { @MainActor in
+            await previousOperation?.value
+            try await operation()
+        }
+
+        operationTail = Task { @MainActor in
+            _ = try? await operationTask.value
+        }
+
+        try await operationTask.value
     }
 
     /// Retained for source compatibility with callers that explicitly construct
