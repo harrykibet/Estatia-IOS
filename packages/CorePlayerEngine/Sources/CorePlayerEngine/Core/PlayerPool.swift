@@ -47,6 +47,11 @@ public final class PlayerPool {
     private let configuration:
         PlayerPoolConfiguration
 
+    private let sizingPolicy:
+        PlayerPoolSizingPolicy
+
+    private var effectiveMaxPlayers: Int
+
     private let makeEngine:
         @MainActor () -> PlayerEngine
 
@@ -100,9 +105,12 @@ public final class PlayerPool {
 
     public init(
         configuration: PlayerPoolConfiguration = PlayerPoolConfiguration(),
+        sizingPolicy: PlayerPoolSizingPolicy = PlayerPoolSizingPolicy(),
         factory: @escaping @MainActor () -> PlayerEngine
     ) {
         self.configuration = configuration
+        self.sizingPolicy = sizingPolicy
+        self.effectiveMaxPlayers = configuration.maxPlayers
         self.makeEngine = factory
     }
 
@@ -111,10 +119,12 @@ public final class PlayerPool {
     /// Tests and alternative integrations should inject a factory through
     /// the designated initializer to keep player construction deterministic.
     public convenience init(
-        configuration: PlayerPoolConfiguration = PlayerPoolConfiguration()
+        configuration: PlayerPoolConfiguration = PlayerPoolConfiguration(),
+        sizingPolicy: PlayerPoolSizingPolicy = PlayerPoolSizingPolicy()
     ) {
         self.init(
             configuration: configuration,
+            sizingPolicy: sizingPolicy,
             factory: {
                 PlayerEngineFactory.make()
             }
@@ -359,7 +369,8 @@ public final class PlayerPool {
 
         managed.markIdle()
 
-        if idlePlayers.count < configuration.maxIdlePlayers {
+        if idlePlayers.count < configuration.maxIdlePlayers &&
+            allPlayers.count <= effectiveMaxPlayers {
             idlePlayers.append(managed)
         } else {
             try? await managed.perform {
@@ -460,6 +471,26 @@ public final class PlayerPool {
         }
     }
 
+    // MARK: - Environment
+
+    /// Updates the pool's allocation ceiling without interrupting pinned or
+    /// currently playing items. Existing resources are retired as they are
+    /// naturally released; subsequent acquisitions cannot grow beyond the
+    /// newly calculated limit.
+    public func updateEnvironment(
+        _ environment: PlayerPoolEnvironment
+    ) {
+        guard !isDraining else { return }
+        effectiveMaxPlayers = sizingPolicy.calculateMaxPlayers(
+            environment: environment,
+            configuredMaximum: configuration.maxPlayers
+        )
+    }
+
+    public var maxRetainedPlayers: Int {
+        effectiveMaxPlayers
+    }
+
     // MARK: - Snapshot
 
     public func activePlayersSnapshot()
@@ -496,7 +527,7 @@ public final class PlayerPool {
 
         // 2. Create if capacity exists.
         if allPlayers.count <
-            configuration.maxPlayers {
+            effectiveMaxPlayers {
 
             let managed =
                 ManagedPlayer(
