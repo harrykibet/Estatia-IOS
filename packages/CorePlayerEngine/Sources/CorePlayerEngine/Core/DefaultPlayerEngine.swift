@@ -6,11 +6,13 @@
 //
 
 import Foundation
+import AVFoundation
 
 @MainActor
-final class DefaultPlayerEngine: PlayerEngine {
+final class DefaultPlayerEngine: PlayerEngine, AVPlayerProviding {
     
     private let actor: PlayerActor
+    private let presentationTransport: AVPlayerWrapper
     
     private let stateEmitter = PlayerEventEmitter<PlayerState>()
     private let eventEmitter = PlayerEventEmitter<PlayerEvent>()
@@ -20,6 +22,7 @@ final class DefaultPlayerEngine: PlayerEngine {
         player: AVPlayerWrapper,
         watchdog: PlaybackWatchdog
     ) {
+        self.presentationTransport = player
         self.actor = PlayerActor(
             config: config,
             player: player,
@@ -29,6 +32,12 @@ final class DefaultPlayerEngine: PlayerEngine {
         )
     }
     
+    // MARK: - Presentation
+
+    var presentationPlayer: AVPlayer? {
+        presentationTransport.presentationPlayer()
+    }
+
     // MARK: - Streams
     
     var state: AsyncStream<PlayerState> {
