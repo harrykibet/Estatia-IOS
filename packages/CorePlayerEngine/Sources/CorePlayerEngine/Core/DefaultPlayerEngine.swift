@@ -38,6 +38,14 @@ final class DefaultPlayerEngine: PlayerEngine, AVPlayerProviding {
         presentationTransport.presentationPlayer()
     }
 
+    var observedBitrateBps: Double? {
+        presentationTransport.observedBitrateBps()
+    }
+
+    func setPreferredPeakBitRate(_ bitrateBps: Double) {
+        presentationTransport.setPreferredPeakBitRate(bitrateBps)
+    }
+
     // MARK: - Streams
     
     var state: AsyncStream<PlayerState> {
