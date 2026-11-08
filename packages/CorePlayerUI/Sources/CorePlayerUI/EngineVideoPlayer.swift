@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 import CorePlayerEngine
 
 /// Formats playback positions consistently across the player controls.
@@ -343,6 +344,8 @@ public struct EngineVideoPlayer: View {
 }
 
 private struct PlayerProgressBar: View {
+    @State private var isEditing = false
+
     let currentTime: TimeInterval
     let duration: TimeInterval?
     let bufferedTime: TimeInterval?
@@ -380,12 +383,15 @@ private struct PlayerProgressBar: View {
             }
             .frame(height: 4)
             .frame(maxHeight: .infinity)
-            .contentShape(Rectangle().size(width: width, height: 28))
+            .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         guard isEnabled else { return }
-                        onEditingChanged(true)
+                        if !isEditing {
+                            isEditing = true
+                            onEditingChanged(true)
+                        }
                         let fraction = min(max(value.location.x / width, 0), 1)
                         onValueChanged(safeDuration * fraction)
                     }
@@ -393,7 +399,10 @@ private struct PlayerProgressBar: View {
                         guard isEnabled else { return }
                         let fraction = min(max(value.location.x / width, 0), 1)
                         onValueChanged(safeDuration * fraction)
-                        onEditingChanged(false)
+                        if isEditing {
+                            isEditing = false
+                            onEditingChanged(false)
+                        }
                     }
             )
             .accessibilityElement()
