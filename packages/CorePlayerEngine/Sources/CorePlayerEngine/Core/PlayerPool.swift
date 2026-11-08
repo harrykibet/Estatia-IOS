@@ -93,6 +93,11 @@ public final class PlayerPool {
     private var inFlightReleases:
         [String: Task<Void, Never>] = [:]
 
+    /// Idle engines removed by an environment-driven capacity reduction.
+    /// Kept in the pool's retained count until terminal release completes.
+    private var inFlightDisposals:
+        [UUID: Task<Void, Never>] = [:]
+
     private(set) var releasingMediaIds: Set<String> = []
 
     // MARK: - Lifecycle
@@ -395,6 +400,7 @@ public final class PlayerPool {
 
         let pendingCreations = Array(inFlightCreations.values)
         let pendingReleases = Array(inFlightReleases.values)
+        let pendingDisposals = Array(inFlightDisposals.values)
 
         for task in pendingCreations {
             task.cancel()
@@ -403,7 +409,8 @@ public final class PlayerPool {
         let task = Task { @MainActor [self] in
             await finishReleaseAll(
                 pendingCreations: pendingCreations,
-                pendingReleases: pendingReleases
+                pendingReleases: pendingReleases,
+                pendingDisposals: pendingDisposals
             )
         }
 
@@ -413,7 +420,8 @@ public final class PlayerPool {
 
     private func finishReleaseAll(
         pendingCreations: [Task<ManagedPlayer, Error>],
-        pendingReleases: [Task<Void, Never>]
+        pendingReleases: [Task<Void, Never>],
+        pendingDisposals: [Task<Void, Never>]
     ) async {
         // A creation may be suspended inside load(), and a release may be
         // suspended inside stop(). Both must finish before terminal disposal.
@@ -422,6 +430,10 @@ public final class PlayerPool {
         }
 
         for task in pendingReleases {
+            await task.value
+        }
+
+        for task in pendingDisposals {
             await task.value
         }
 
@@ -485,6 +497,30 @@ public final class PlayerPool {
             environment: environment,
             configuredMaximum: configuration.maxPlayers
         )
+
+        // Retire excess idle engines immediately. Active and pinned media are
+        // left undisturbed; they are retired naturally when their owners release.
+        let idleLimit = min(
+            configuration.maxIdlePlayers,
+            max(0, effectiveMaxPlayers - activePlayers.count)
+        )
+        let excessCount = max(0, idlePlayers.count - idleLimit)
+        guard excessCount > 0 else { return }
+
+        let excessPlayers = Array(idlePlayers.suffix(excessCount))
+        idlePlayers.removeLast(excessCount)
+
+        let disposalID = UUID()
+        let disposalTask = Task { @MainActor [weak self] in
+            for managed in excessPlayers {
+                try? await managed.perform {
+                    try await managed.engine.release()
+                }
+                self?.removeFromPool(managed)
+            }
+            self?.inFlightDisposals.removeValue(forKey: disposalID)
+        }
+        inFlightDisposals[disposalID] = disposalTask
     }
 
     public var maxRetainedPlayers: Int {
