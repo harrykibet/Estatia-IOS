@@ -14,6 +14,7 @@ let package = Package(
         ),
     ],
     dependencies: [
+        .package(path: "../CoreCommon"),
         .package(path: "../CoreModel"),
         .package(path: "../CoreNetwork")
     ],
@@ -21,6 +22,7 @@ let package = Package(
         .target(
             name: "CoreAppData",
             dependencies: [
+                .product(name: "CoreCommon", package: "CoreCommon"),
                 .product(name: "CoreModel", package: "CoreModel"),
                 .product(name: "CoreNetwork", package: "CoreNetwork")
             ]
