@@ -187,6 +187,59 @@ final class PlayerPoolTests: XCTestCase {
 
     // MARK: - Tests
 
+    func testEnvironmentReductionRetiresReleasedPlayersAndCapsFutureAllocation() async throws {
+        var created: [FakePlayerEngine] = []
+
+        let pool = PlayerPool(
+            configuration: PlayerPoolConfiguration(
+                maxPlayers: 3,
+                maxIdlePlayers: 2
+            ),
+            factory: {
+                let engine = FakePlayerEngine()
+                created.append(engine)
+                return engine
+            }
+        )
+
+        _ = try await pool.getOrCreate(
+            mediaId: "one",
+            source: makeSource("one")
+        )
+        _ = try await pool.getOrCreate(
+            mediaId: "two",
+            source: makeSource("two")
+        )
+        _ = try await pool.getOrCreate(
+            mediaId: "three",
+            source: makeSource("three")
+        )
+
+        pool.updateEnvironment(
+            PlayerPoolEnvironment(
+                physicalMemoryMB: 8_192,
+                thermalState: .critical
+            )
+        )
+
+        XCTAssertEqual(pool.maxRetainedPlayers, 1)
+
+        await pool.release(mediaId: "one")
+        await pool.release(mediaId: "two")
+
+        XCTAssertEqual(pool.retainedPlayerCount, 1)
+
+        _ = try await pool.getOrCreate(
+            mediaId: "four",
+            source: makeSource("four")
+        )
+
+        // The reduced ceiling must recycle the retained engine rather than
+        // allocating a fourth AVPlayer instance.
+        XCTAssertEqual(created.count, 3)
+        XCTAssertEqual(pool.retainedPlayerCount, 1)
+    }
+
     func testPrewarmCreatesPlayer() async {
 
         var created: [FakePlayerEngine] = []
