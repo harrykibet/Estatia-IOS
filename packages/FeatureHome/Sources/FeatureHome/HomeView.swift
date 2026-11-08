@@ -5,8 +5,9 @@
 //  Created by builder on 5/8/25.
 //
 
-
 import SwiftUI
+import CoreAppData
+import CoreModel
 
 public struct HomeView: View {
     @StateObject var viewModel: HomeViewModel
@@ -44,14 +45,32 @@ public struct HomeView: View {
     }
 }
 
-#Preview {
-    struct MockRepo: PropertyRepository {
-        func fetchProperty(id: String) async throws -> PropertyModel { PropertyModel() }
-        func fetchProperties() async throws -> [PropertyModel] { [PropertyModel()] }
-        func searchProperties(query: String?, filters: PropertySearchFilters) async throws -> [PropertyModel] { [PropertyModel()] }
-        func createProperty(_ property: PropertyModel) async throws -> PropertyModel { property }
-        func updateProperty(_ property: PropertyModel) async throws -> PropertyModel { property }
-        func deleteProperty(id: String) async throws {}
+// Keep preview fixtures at file scope. The #Preview macro body is a
+// PreviewMacroBodyBuilder and cannot contain local type declarations.
+private struct HomePreviewRepository: PropertyRepository {
+    func fetchProperty(id: String) async throws -> PropertyModel {
+        PropertyModel()
     }
-    HomeView(viewModel: HomeViewModel(repository: MockRepo()))
+
+    func fetchProperties() async throws -> [PropertyModel] {
+        [PropertyModel()]
+    }
+
+    func searchProperties(query: String?, filters: PropertySearchFilters) async throws -> [PropertyModel] {
+        [PropertyModel()]
+    }
+
+    func createProperty(_ property: PropertyModel) async throws -> PropertyModel {
+        property
+    }
+
+    func updateProperty(_ property: PropertyModel) async throws -> PropertyModel {
+        property
+    }
+
+    func deleteProperty(id: String) async throws {}
+}
+
+#Preview {
+    HomeView(viewModel: HomeViewModel(repository: HomePreviewRepository()))
 }
