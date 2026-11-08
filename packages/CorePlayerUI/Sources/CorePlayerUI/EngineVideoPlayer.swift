@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AVKit
 import Combine
 import CorePlayerEngine
 
@@ -28,6 +29,7 @@ public enum PlayerTimeFormatter {
 /// Observable presentation state that adapts the engine's async streams for SwiftUI.
 @MainActor
 public final class PlayerViewModel: ObservableObject {
+    @Published public private(set) var presentationPlayer: AVPlayer?
     @Published public private(set) var state: PlayerState = .idle
     @Published public private(set) var currentTime: TimeInterval = 0
     @Published public private(set) var duration: TimeInterval?
@@ -56,11 +58,13 @@ public final class PlayerViewModel: ObservableObject {
 
     public func startObserving() {
         guard stateTask == nil, eventsTask == nil else { return }
+        refreshPresentationPlayer()
 
         stateTask = Task { [weak self, engine] in
             for await nextState in engine.state {
                 guard let self else { return }
                 self.state = nextState
+                self.refreshPresentationPlayer()
                 if case let .error(error) = nextState {
                     self.lastError = error
                 } else {
@@ -154,6 +158,13 @@ public final class PlayerViewModel: ObservableObject {
         }
     }
 
+    private func refreshPresentationPlayer() {
+        guard presentationPlayer == nil,
+              let provider = engine as? any AVPlayerProviding
+        else { return }
+        presentationPlayer = provider.presentationPlayer
+    }
+
     private func apply(error: Error) {
         let playerError = PlayerError.from(error)
         lastError = playerError
@@ -174,7 +185,12 @@ public struct EngineVideoPlayer: View {
 
     public var body: some View {
         ZStack {
-            Color.black
+            if let player = model.presentationPlayer {
+                VideoPlayer(player: player)
+                    .allowsHitTesting(false)
+            } else {
+                Color.black
+            }
 
             centerContent
 
