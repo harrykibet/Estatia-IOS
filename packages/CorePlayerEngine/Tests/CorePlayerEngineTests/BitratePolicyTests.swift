@@ -100,6 +100,17 @@ final class BitratePolicyTests: XCTestCase {
         XCTAssertEqual(result, 2_000_000, accuracy: 1)
     }
 
+    func testDeviceLimitBelowMinimumFloorIsStillRespected() {
+        let result = policy.calculateMaximumBitrate(
+            for: BitratePolicyInput(
+                estimatedThroughputBps: 8_000_000,
+                bufferAheadSeconds: 10,
+                deviceMaximumBitrateBps: 50_000
+            )
+        )
+        XCTAssertEqual(result, 50_000, accuracy: 1)
+    }
+
     func testSlowNetworkIsNeverOverriddenByMinimumQualityFloor() {
         let result = policy.calculateMaximumBitrate(
             for: BitratePolicyInput(
