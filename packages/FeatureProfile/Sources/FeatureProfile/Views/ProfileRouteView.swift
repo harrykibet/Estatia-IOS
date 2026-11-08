@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/profile/src/main/java/com/estatia/realestate/apps/feature/profile/ui/screens/ProfileScreen.kt composable ProfileRoute
 import SwiftUI
+import CoreDesignSystem
 
 public struct ProfileRouteView: View {
     @StateObject public var viewModel = ProfileRouteViewModel()
