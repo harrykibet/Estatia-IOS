@@ -44,7 +44,7 @@ public struct SearchView: View {
                             ProgressView()
                                 .padding()
                         } else {
-                            ForEach(viewModel.results.indices, id: \\.self) { index in
+                            ForEach(viewModel.results.indices, id: \.self) { index in
                                 let p = viewModel.results[index]
                                 SearchResultCard(title: p.title ?? "Untitled",
                                                  subtitle: p.county ?? "Unknown location")
