@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/auth/src/main/java/com/estatia/realestate/apps/feature/auth/ui/screens/ForgotPasswordDialog.kt composable EmailInput
 import SwiftUI
+import CoreDesignSystem
 
 public struct EmailInputView: View {
     @StateObject public var viewModel = EmailInputViewModel()
