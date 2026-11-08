@@ -416,6 +416,15 @@ final class AVPlayerWrapper:
         timeObserver.attach(player: player, item: item)
     }
 
+    // MARK: - Presentation
+
+    /// Returns the currently loaded AVPlayer to the main-actor presentation layer.
+    /// The wrapper retains exclusive mutation of the player on its serial queue.
+    @MainActor
+    func presentationPlayer() -> AVPlayer? {
+        queue.sync { player }
+    }
+
     // MARK: - Playback
 
     func play() {
