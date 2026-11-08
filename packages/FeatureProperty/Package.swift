@@ -14,13 +14,15 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(path: "../CoreModel")
+        .package(path: "../CoreModel"),
+        .package(path: "../CoreDesignSystem")
     ],
     targets: [
         .target(
             name: "FeatureProperty",
             dependencies: [
-                .product(name: "CoreModel", package: "CoreModel")
+                .product(name: "CoreModel", package: "CoreModel"),
+                .product(name: "CoreDesignSystem", package: "CoreDesignSystem")
             ]
         ),
         .testTarget(
