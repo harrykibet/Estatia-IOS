@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/auth/src/main/java/com/estatia/realestate/apps/feature/auth/ui/screens/LoginScreen.kt composable LoginScreenLight
 import SwiftUI
+import CoreDesignSystem
 
 public struct LoginScreenLightView: View {
     @StateObject public var viewModel = LoginScreenLightViewModel()
