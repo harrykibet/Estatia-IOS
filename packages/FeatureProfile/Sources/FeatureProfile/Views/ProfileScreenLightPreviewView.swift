@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/profile/src/main/java/com/estatia/realestate/apps/feature/profile/ui/screens/ProfileScreen.kt composable ProfileScreenLightPreview
 import SwiftUI
+import CoreDesignSystem
 
 public struct ProfileScreenLightPreviewView: View {
     @StateObject public var viewModel = ProfileScreenLightPreviewViewModel()
