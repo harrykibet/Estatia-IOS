@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/auth/src/main/java/com/estatia/realestate/apps/feature/auth/ui/screens/EmailVerificationDialog.kt composable EmailVerificationDialog
 import SwiftUI
+import CoreDesignSystem
 
 public struct EmailVerificationDialogView: View {
     @StateObject public var viewModel = EmailVerificationDialogViewModel()
