@@ -6,6 +6,7 @@ final class PlaybackOrchestratorTests: XCTestCase {
 
     // MARK: - Synchronization
 
+    @MainActor
     final class ManualAsyncGate {
         private var continuation: CheckedContinuation<Void, Never>?
         private(set) var isWaiting = false
