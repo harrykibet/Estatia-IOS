@@ -125,8 +125,13 @@ public final class PlayerViewModel: ObservableObject {
             }
         }
 
-        eventsTask = Task { [weak self, engine] in
-            for await event in engine.events {
+        // Subscribe before reading the snapshot: any change racing with this
+        // read is also buffered in the stream and cannot be missed.
+        let eventStream = engine.events
+        isLowBandwidth = engine.isSustainedLowBandwidth
+
+        eventsTask = Task { [weak self] in
+            for await event in eventStream {
                 guard let self else { return }
                 switch event {
                 case let .progress(progress):
