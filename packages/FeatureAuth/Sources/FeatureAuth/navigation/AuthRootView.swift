@@ -37,11 +37,11 @@ public struct AuthRootView: View {
     // MARK: - Dependencies
 
     private let authRepository: AuthRepository
-    private let onAuthenticated: @MainActor () -> Void
+    private let onAuthenticated: @MainActor @Sendable () -> Void
 
     public init(
         authRepository: AuthRepository,
-        onAuthenticated: @escaping @MainActor () -> Void
+        onAuthenticated: @escaping @MainActor @Sendable () -> Void
     ) {
         self.authRepository = authRepository
         self.onAuthenticated = onAuthenticated
