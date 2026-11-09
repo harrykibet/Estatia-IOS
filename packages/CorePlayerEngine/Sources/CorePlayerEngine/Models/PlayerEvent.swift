@@ -45,6 +45,9 @@ public enum PlayerEvent: Sendable {
     // MARK: Progress
     
     case progress(PlaybackProgress)
+
+    /// Changes when sustained low throughput crosses the warning/recovery thresholds.
+    case lowBandwidthChanged(isSustained: Bool)
     
     
     // MARK: Errors
