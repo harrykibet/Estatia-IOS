@@ -16,6 +16,10 @@ on:
       - "packages/CorePlayerUI/**"
       - ".github/workflows/player-packages.yml"
 
+concurrency:
+  group: estatia-player-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   core-player-engine:
     name: CorePlayerEngine
@@ -23,7 +27,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Select Xcode 26.6
         run: |
@@ -43,7 +47,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Select Xcode 26.6
         run: |

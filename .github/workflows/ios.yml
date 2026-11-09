@@ -5,6 +5,10 @@ on:
     branches: [ main ]
   pull_request:
 
+concurrency:
+  group: estatia-ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-26
@@ -59,7 +63,10 @@ jobs:
         path: |
           ~/.swiftpm
           ~/Library/Caches/org.swift.swiftpm
-        key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved') }}
+        key: spm-${{ runner.os }}-${{ github.event.pull_request.number || github.ref_name }}-${{ hashFiles('**/Package.resolved') }}
+        restore-keys: |
+          spm-${{ runner.os }}-${{ github.event.pull_request.number || github.ref_name }}-
+          spm-${{ runner.os }}-
 
     # =========================
     # 🔐 Restore Firebase configuration from GitHub Actions secret

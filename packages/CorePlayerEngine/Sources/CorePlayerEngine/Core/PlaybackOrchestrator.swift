@@ -298,6 +298,30 @@ public final class PlaybackOrchestrator {
         return managed.engine.state
     }
 
+    /// Observes engine events for an active or preloaded media identity.
+    public func observeEvents(
+        mediaId: String
+    ) async -> AsyncStream<PlayerEvent>? {
+        guard let managed = await pool.get(mediaId: mediaId),
+              managed.mediaId == mediaId
+        else {
+            return nil
+        }
+        return managed.engine.events
+    }
+
+    /// Returns the AVFoundation tuning bridge for a currently managed player.
+    public func avPlayerProvider(
+        mediaId: String
+    ) async -> (any AVPlayerProviding)? {
+        guard let managed = await pool.get(mediaId: mediaId),
+              managed.mediaId == mediaId
+        else {
+            return nil
+        }
+        return managed.engine as? any AVPlayerProviding
+    }
+
     public func currentState(
         mediaId: String
     ) async -> PlayerState? {

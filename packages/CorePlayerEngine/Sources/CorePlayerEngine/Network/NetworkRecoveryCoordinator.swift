@@ -41,6 +41,10 @@ public final class NetworkRecoveryCoordinator {
     /// Invalidates previously scheduled recovery loops.
     private var recoveryGeneration: UInt64 = 0
 
+    /// Receives every network path update, including metered/constrained
+    /// changes while connectivity remains satisfied.
+    public var onNetworkSnapshotChange: (@MainActor @Sendable (NetworkSnapshot) -> Void)?
+
     // MARK: - Init
 
     public init(
@@ -107,6 +111,8 @@ public final class NetworkRecoveryCoordinator {
     private func handle(
         _ snapshot: NetworkSnapshot
     ) async {
+
+        onNetworkSnapshotChange?(snapshot)
 
         guard snapshot.isConnected else {
 
