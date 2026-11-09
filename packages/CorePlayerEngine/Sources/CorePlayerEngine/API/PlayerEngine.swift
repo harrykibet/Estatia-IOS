@@ -34,6 +34,15 @@ public protocol PlayerEngine: AnyObject {
     /// Terminates an unsuccessful automatic recovery cycle.
     func notifyRecoveryExhausted() async
 
+    /// Whether the user still intends playback to continue after recovery.
+    var shouldResumeAfterInterruption: Bool { get async }
+
+    /// Replaces the transport item without applying configuration auto-play.
+    func loadForNetworkRecovery(
+        mediaId: String,
+        source: MediaSource
+    ) async throws
+
     /// Publishes a sustained-bandwidth warning without changing transport state.
     func notifySustainedLowBandwidth(_ isSustained: Bool) async
     
@@ -58,6 +67,20 @@ public protocol PlayerEngine: AnyObject {
 public extension PlayerEngine {
 
     var isSustainedLowBandwidth: Bool { false }
+
+    var shouldResumeAfterInterruption: Bool {
+        get async {
+            let state = await currentState
+            return state == .playing || state == .buffering
+        }
+    }
+
+    func loadForNetworkRecovery(
+        mediaId: String,
+        source: MediaSource
+    ) async throws {
+        try await load(mediaId: mediaId, source: source)
+    }
 
     /// Existing custom engines may ignore the optional quality notification.
     func notifySustainedLowBandwidth(_ isSustained: Bool) async {}

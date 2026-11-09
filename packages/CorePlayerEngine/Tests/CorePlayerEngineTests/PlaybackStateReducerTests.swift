@@ -123,7 +123,7 @@ final class PlaybackStateReducerTests: XCTestCase {
         reducer.reduce(.loadStarted)
         reducer.reduce(.ready)
         reducer.reduce(.play)
-        reducer.reduce(.networkLost)
+        reducer.reduce(.networkLost(resumePlayback: true))
 
         XCTAssertEqual(
             reducer.state,
@@ -142,7 +142,7 @@ final class PlaybackStateReducerTests: XCTestCase {
         reducer.reduce(.loadStarted)
         reducer.reduce(.ready)
         reducer.reduce(.play)
-        reducer.reduce(.networkLost)
+        reducer.reduce(.networkLost(resumePlayback: true))
         reducer.reduce(.networkRestored)
 
         XCTAssertEqual(
@@ -159,7 +159,7 @@ final class PlaybackStateReducerTests: XCTestCase {
         reducer.reduce(.ready)
         reducer.reduce(.play)
         reducer.reduce(.pause)
-        reducer.reduce(.networkLost)
+        reducer.reduce(.networkLost(resumePlayback: false))
         reducer.reduce(.networkRestored)
 
         XCTAssertEqual(
@@ -170,6 +170,24 @@ final class PlaybackStateReducerTests: XCTestCase {
         XCTAssertFalse(
             reducer.shouldResumeAfterInterruption
         )
+    }
+
+    func testNetworkLossDuringBufferingUsesLatestPauseIntent() {
+
+        var reducer = PlaybackStateReducer()
+        reducer.reduce(.loadStarted)
+        reducer.reduce(.ready)
+        reducer.reduce(.play)
+        reducer.reduce(.bufferingStarted)
+
+        reducer.reduce(.networkLost(resumePlayback: false))
+
+        XCTAssertEqual(reducer.state, .reconnecting)
+        XCTAssertFalse(reducer.shouldResumeAfterInterruption)
+
+        reducer.reduce(.networkRestored)
+
+        XCTAssertEqual(reducer.state, .ready)
     }
 
     func testWatchdogTurnsBufferingIntoPlaybackStalled() {
@@ -240,7 +258,7 @@ final class PlaybackStateReducerTests: XCTestCase {
         reducer.reduce(.loadStarted)
         reducer.reduce(.ready)
         reducer.reduce(.play)
-        reducer.reduce(.networkLost)
+        reducer.reduce(.networkLost(resumePlayback: true))
 
         reducer.reduce(.networkRestored)
         reducer.reduce(.transportPlaying)

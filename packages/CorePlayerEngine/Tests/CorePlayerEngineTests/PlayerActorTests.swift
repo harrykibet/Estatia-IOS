@@ -219,4 +219,102 @@ final class PlayerActorTests: XCTestCase {
 
         try await actor.handle(.release)
     }
+
+    func testNetworkLossUsesLatestPauseIntentWhileBuffering() async throws {
+        let transport = FakePlayerTransport()
+        let stateEmitter = PlayerEventEmitter<PlayerState>()
+        let actor = PlayerActor(
+            config: PlayerConfiguration(),
+            player: transport,
+            watchdog: PlaybackWatchdog(),
+            stateEmitter: stateEmitter,
+            eventEmitter: PlayerEventEmitter<PlayerEvent>()
+        )
+
+        var states = stateEmitter.stream.makeAsyncIterator()
+        let source = MediaSource(
+            url: URL(string: "https://example.com/video.mp4")!
+        )
+
+        try await actor.handle(.load(source))
+        let loadingState = await states.next()
+        XCTAssertEqual(loadingState, .loading)
+
+        transport.emitReady()
+        let readyState = await states.next()
+        XCTAssertEqual(readyState, .ready)
+
+        try await actor.handle(.play)
+        transport.emitTransportStatus(.waiting)
+        let bufferingState = await states.next()
+        XCTAssertEqual(bufferingState, .buffering)
+
+        // Intent changes immediately, before AVPlayer confirms the paused state.
+        try await actor.handle(.pause)
+        let resumeIntentBeforeNetworkLoss = await actor.shouldResumeAfterInterruption
+        XCTAssertFalse(resumeIntentBeforeNetworkLoss)
+
+        await actor.notifyNetworkLost()
+
+        let reconnectingState = await states.next()
+        XCTAssertEqual(reconnectingState, .reconnecting)
+        let resumeIntentAfterNetworkLoss = await actor.shouldResumeAfterInterruption
+        XCTAssertFalse(resumeIntentAfterNetworkLoss)
+
+        try await actor.handle(.release)
+    }
+
+    func testNetworkRecoveryLoadWaitsForAuthorizedResumeAndSuppressesAutoPlay()
+        async throws {
+        let transport = FakePlayerTransport()
+        let stateEmitter = PlayerEventEmitter<PlayerState>()
+        let actor = PlayerActor(
+            config: PlayerConfiguration(autoPlay: true),
+            player: transport,
+            watchdog: PlaybackWatchdog(),
+            stateEmitter: stateEmitter,
+            eventEmitter: PlayerEventEmitter<PlayerEvent>()
+        )
+
+        var states = stateEmitter.stream.makeAsyncIterator()
+        let source = MediaSource(
+            url: URL(string: "https://example.com/video.mp4")!
+        )
+
+        try await actor.handle(.load(source))
+        let initialLoadingState = await states.next()
+        XCTAssertEqual(initialLoadingState, .loading)
+
+        transport.emitReady()
+        let initialReadyState = await states.next()
+        XCTAssertEqual(initialReadyState, .ready)
+        XCTAssertEqual(transport.playCount, 1)
+
+        await actor.notifyNetworkLost()
+        let reconnectingState = await states.next()
+        XCTAssertEqual(reconnectingState, .reconnecting)
+
+        try await actor.loadForNetworkRecovery(
+            mediaId: "video-1",
+            source: source
+        )
+        let recoveryLoadingState = await states.next()
+        XCTAssertEqual(recoveryLoadingState, .loading)
+
+        transport.emitReady()
+        let recoveryReadyState = await states.next()
+        XCTAssertEqual(recoveryReadyState, .ready)
+
+        XCTAssertEqual(
+            transport.playCount,
+            1,
+            "Recovery must not auto-play before the orchestrator validates the attempt."
+        )
+
+        try await actor.handle(.play)
+        XCTAssertEqual(transport.playCount, 2)
+
+        try await actor.handle(.release)
+    }
+
 }

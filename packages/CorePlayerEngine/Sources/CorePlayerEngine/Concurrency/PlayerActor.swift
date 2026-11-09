@@ -44,6 +44,10 @@ actor PlayerActor {
     /// Desired playback intent is separate from observed transport state.
     /// A play/pause command changes this value; AVPlayer KVO changes reducer state.
     private var wantsPlayback = false
+
+    /// Recovery loads defer resumption until the orchestrator validates ownership.
+    private var isLoadingForNetworkRecovery = false
+    private var recoveryResumeAuthorized = false
     
     // MARK: - Initialization
     
@@ -125,6 +129,10 @@ actor PlayerActor {
     var currentState: PlayerState {
         reducer.state
     }
+
+    var shouldResumeAfterInterruption: Bool {
+        wantsPlayback
+    }
     
     var currentTime: TimeInterval {
         currentTimeInternal
@@ -148,7 +156,17 @@ actor PlayerActor {
             apply(.ready)
             emit(.ready)
             
-            if config.autoPlay {
+            let wasNetworkRecoveryLoad = isLoadingForNetworkRecovery
+            isLoadingForNetworkRecovery = false
+
+            if wasNetworkRecoveryLoad {
+                let resumeWasAuthorized = recoveryResumeAuthorized
+                recoveryResumeAuthorized = false
+                if resumeWasAuthorized {
+                    try? await handle(.play)
+                }
+            } else if wantsPlayback || config.autoPlay {
+                // A play request may arrive before AVPlayer reports ready.
                 try? await handle(.play)
             }
             
@@ -166,7 +184,8 @@ actor PlayerActor {
             }
             
         case .failed(let error):
-            wantsPlayback = false
+            isLoadingForNetworkRecovery = false
+            recoveryResumeAuthorized = false
             await watchdog.cancel()
             handlePlaybackFailure(error)
             
@@ -263,7 +282,29 @@ actor PlayerActor {
     }
 
     // MARK: - Public Intent Handling
-    
+
+    /// Replaces the item after connectivity returns without applying the
+    /// configured auto-play policy. The orchestrator authorizes any resumption.
+    func loadForNetworkRecovery(
+        mediaId: String,
+        source: MediaSource
+    ) async throws {
+        await watchdog.cancel()
+        isLoadingForNetworkRecovery = true
+        recoveryResumeAuthorized = false
+        apply(.loadStarted)
+        currentSource = source
+
+        do {
+            try await player.load(mediaId: mediaId, source: source)
+        } catch {
+            isLoadingForNetworkRecovery = false
+            recoveryResumeAuthorized = false
+            handlePlaybackFailure(error)
+            throw error
+        }
+    }
+
     func handle(
         _ intent: PlayerIntent
     ) async throws {
@@ -274,6 +315,8 @@ actor PlayerActor {
             
             await watchdog.cancel()
             wantsPlayback = false
+            isLoadingForNetworkRecovery = false
+            recoveryResumeAuthorized = false
             apply(.loadStarted)
             
             currentSource = source
@@ -297,6 +340,8 @@ actor PlayerActor {
             
             await watchdog.cancel()
             wantsPlayback = false
+            isLoadingForNetworkRecovery = false
+            recoveryResumeAuthorized = false
             apply(.loadStarted)
             
             currentSource = source
@@ -314,7 +359,15 @@ actor PlayerActor {
             }
             
         case .play:
-            
+
+            if reducer.state == .loading {
+                wantsPlayback = true
+                if isLoadingForNetworkRecovery {
+                    recoveryResumeAuthorized = true
+                }
+                return
+            }
+
             guard reducer.state.isPlayable else {
                 return
             }
@@ -337,6 +390,7 @@ actor PlayerActor {
             }
 
             wantsPlayback = false
+            recoveryResumeAuthorized = false
             player.pause()
             
         case .seek(let seconds):
@@ -421,18 +475,17 @@ actor PlayerActor {
     private func handlePlaybackFailure(
         _ error: PlayerError
     ) {
-        wantsPlayback = false
-
         switch error {
             
         case .network:
             
-            apply(.networkLost)
+            apply(.networkLost(resumePlayback: wantsPlayback))
             
             emit(.failed(error))
             
         default:
-            
+
+            wantsPlayback = false
             apply(
                 .failed(error)
             )
@@ -461,12 +514,14 @@ actor PlayerActor {
     
     func notifyNetworkLost() async {
         await watchdog.cancel()
-        apply(.networkLost)
+        apply(.networkLost(resumePlayback: wantsPlayback))
     }
     
     func notifyRecoveryExhausted() async {
         await watchdog.cancel()
         wantsPlayback = false
+        isLoadingForNetworkRecovery = false
+        recoveryResumeAuthorized = false
         player.pause()
         
         let error = PlayerError.network(

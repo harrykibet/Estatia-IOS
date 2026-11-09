@@ -40,6 +40,7 @@ final class PlaybackOrchestratorTests: XCTestCase {
         private var eventContinuation: AsyncStream<PlayerEvent>.Continuation?
 
         private var stateValue: PlayerState = .idle
+        private var resumeIntent = false
 
         var stopGate: ManualAsyncGate?
         var playGate: ManualAsyncGate?
@@ -98,8 +99,19 @@ final class PlaybackOrchestratorTests: XCTestCase {
             try await load(source)
         }
 
+        var shouldResumeAfterInterruption: Bool {
+            get async { resumeIntent }
+        }
+
+        func simulateNetworkLoss(resumePlayback: Bool) {
+            resumeIntent = resumePlayback
+            stateValue = .reconnecting
+            stateContinuation?.yield(.reconnecting)
+        }
+
         func play() async throws {
             playCount += 1
+            resumeIntent = true
             operationLog.append("play.begin")
 
             if let playGate {
@@ -114,6 +126,7 @@ final class PlaybackOrchestratorTests: XCTestCase {
 
         func pause() async throws {
             pauseCount += 1
+            resumeIntent = false
             operationLog.append("pause")
             stateValue = .paused
             stateContinuation?.yield(.paused)
@@ -309,6 +322,48 @@ final class PlaybackOrchestratorTests: XCTestCase {
     }
 
     // MARK: - Recovery Supersession
+
+    func testRecoveryDoesNotAutoPlayWhenPreviousPlaybackIntentWasPaused()
+        async throws {
+        let (orchestrator, _, enginesProvider) = makeOrchestrator()
+
+        try await orchestrator.play(
+            mediaId: "paused",
+            source: makeSource("paused")
+        )
+
+        let engine = try XCTUnwrap(enginesProvider().first)
+        engine.simulateNetworkLoss(resumePlayback: false)
+
+        try await orchestrator.recoverActivePlayback()
+
+        XCTAssertEqual(
+            engine.playCount,
+            1,
+            "Recovery must not issue play when the user had paused."
+        )
+        let recoveredState = await engine.currentState
+        XCTAssertEqual(recoveredState, .ready)
+    }
+
+    func testRecoveryResumesWhenPreviousPlaybackIntentWasActive()
+        async throws {
+        let (orchestrator, _, enginesProvider) = makeOrchestrator()
+
+        try await orchestrator.play(
+            mediaId: "playing",
+            source: makeSource("playing")
+        )
+
+        let engine = try XCTUnwrap(enginesProvider().first)
+        engine.simulateNetworkLoss(resumePlayback: true)
+
+        try await orchestrator.recoverActivePlayback()
+
+        XCTAssertEqual(engine.playCount, 2)
+        let recoveredState = await engine.currentState
+        XCTAssertEqual(recoveredState, .playing)
+    }
 
     func testNewPlaySupersedesSuspendedRecoveryBeforeItCanRestartOldMedia()
         async throws {
