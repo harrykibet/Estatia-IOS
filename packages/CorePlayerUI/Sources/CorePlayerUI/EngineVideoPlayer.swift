@@ -9,6 +9,7 @@ import SwiftUI
 import AVKit
 import Combine
 import CorePlayerEngine
+import UIKit
 
 /// Formats playback positions consistently across the player controls.
 public enum PlayerTimeFormatter {
@@ -23,6 +24,42 @@ public enum PlayerTimeFormatter {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+
+/// Models the pause/resume contract for a press-and-hold gesture.
+/// A cancelled gesture never resumes playback; only a normal release does.
+enum PlayerHoldGestureEvent {
+    case began
+    case ended
+    case cancelled
+}
+
+enum PlayerHoldPlaybackAction: Equatable {
+    case none
+    case pause
+    case resume
+}
+
+struct PlayerHoldInteraction {
+    private(set) var wasPlayingBeforeHold = false
+
+    mutating func handle(
+        _ event: PlayerHoldGestureEvent,
+        isPlaying: Bool
+    ) -> PlayerHoldPlaybackAction {
+        switch event {
+        case .began:
+            wasPlayingBeforeHold = isPlaying
+            return isPlaying ? .pause : .none
+        case .ended:
+            defer { wasPlayingBeforeHold = false }
+            return wasPlayingBeforeHold ? .resume : .none
+        case .cancelled:
+            wasPlayingBeforeHold = false
+            return .none
+        }
     }
 }
 
@@ -43,6 +80,8 @@ public final class PlayerViewModel: ObservableObject {
     private var stateTask: Task<Void, Never>?
     private var eventsTask: Task<Void, Never>?
     private var controlsTask: Task<Void, Never>?
+    private var holdPlaybackTask: Task<Void, Never>?
+    private var holdInteraction = PlayerHoldInteraction()
 
     public init(engine: any PlayerEngine) {
         self.engine = engine
@@ -51,6 +90,8 @@ public final class PlayerViewModel: ObservableObject {
     public var displayedTime: TimeInterval {
         isSeeking ? seekPosition : currentTime
     }
+
+    public var hasPresentationPlayer: Bool { presentationPlayer != nil }
 
     public var canSeek: Bool {
         state.isSeekable && (duration ?? 0) > 0
@@ -89,6 +130,7 @@ public final class PlayerViewModel: ObservableObject {
     }
 
     public func stopObserving() {
+        cancelPress()
         stateTask?.cancel()
         eventsTask?.cancel()
         stateTask = nil
@@ -112,6 +154,55 @@ public final class PlayerViewModel: ObservableObject {
             }
         } catch {
             apply(error: error)
+        }
+    }
+
+    /// Mutes the underlying AVPlayer when the host supplies a mute preference.
+    public func setMuted(_ muted: Bool) {
+        presentationPlayer?.isMuted = muted
+    }
+
+    /// Mirrors Android's press-and-hold behavior. The engine remains the
+    /// authority for playback commands; release resumes only if playback was
+    /// active when the hold began.
+    public func pressChanged(_ isPressed: Bool) {
+        let action = holdInteraction.handle(
+            isPressed ? .began : .ended,
+            isPlaying: state == .playing
+        )
+        performHoldAction(action)
+    }
+
+    /// A cancelled gesture or disappearing view must not restart playback.
+    public func cancelPress() {
+        let action = holdInteraction.handle(.cancelled, isPlaying: false)
+        performHoldAction(action)
+    }
+
+    private func performHoldAction(_ action: PlayerHoldPlaybackAction) {
+        switch action {
+        case .none:
+            break
+        case .pause:
+            holdPlaybackTask = Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.engine.pause()
+                } catch {
+                    self.apply(error: error)
+                }
+            }
+        case .resume:
+            let pauseTask = holdPlaybackTask
+            holdPlaybackTask = Task { [weak self] in
+                await pauseTask?.value
+                guard !Task.isCancelled, let self else { return }
+                do {
+                    try await self.engine.play()
+                } catch {
+                    self.apply(error: error)
+                }
+            }
         }
     }
 
@@ -177,10 +268,29 @@ public final class PlayerViewModel: ObservableObject {
 public struct EngineVideoPlayer: View {
     @StateObject private var model: PlayerViewModel
     private let title: String?
+    private let isMuted: Bool?
+    private let onMuteToggle: (() -> Void)?
+    private let onLike: (() -> Void)?
 
-    public init(engine: any PlayerEngine, title: String? = nil) {
+    /// - Parameters:
+    ///   - engine: The player engine that owns playback and seeking.
+    ///   - title: Optional accessible/display title for the video.
+    ///   - isMuted: Host-owned mute preference. When supplied with onMuteToggle,
+    ///     a mute button is shown and the preference is applied to AVPlayer.
+    ///   - onMuteToggle: Callback for changing the host-owned mute preference.
+    ///   - onLike: Called for a double tap on the video surface.
+    public init(
+        engine: any PlayerEngine,
+        title: String? = nil,
+        isMuted: Bool? = nil,
+        onMuteToggle: (() -> Void)? = nil,
+        onLike: (() -> Void)? = nil
+    ) {
         _model = StateObject(wrappedValue: PlayerViewModel(engine: engine))
         self.title = title
+        self.isMuted = isMuted
+        self.onMuteToggle = onMuteToggle
+        self.onLike = onLike
     }
 
     public var body: some View {
@@ -191,6 +301,20 @@ public struct EngineVideoPlayer: View {
             } else {
                 Color.black
             }
+
+            PlayerInteractionSurface(
+                onSingleTap: {
+                    Task { await model.togglePlayback() }
+                    model.revealControls()
+                },
+                onDoubleTap: {
+                    onLike?()
+                    model.revealControls()
+                },
+                onPressChanged: model.pressChanged,
+                onPressCancelled: model.cancelPress
+            )
+            .accessibilityHidden(true)
 
             centerContent
 
@@ -211,14 +335,19 @@ public struct EngineVideoPlayer: View {
                 .transition(.opacity)
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            model.toggleControlsVisibility()
-        }
         .animation(.easeInOut(duration: 0.2), value: model.areControlsVisible)
         .onAppear {
             model.startObserving()
+            model.setMuted(isMuted ?? false)
             model.revealControls()
+        }
+        .onChange(of: isMuted) { _, newValue in
+            model.setMuted(newValue ?? false)
+        }
+        .onChange(of: model.hasPresentationPlayer) { _, hasPlayer in
+            if hasPlayer {
+                model.setMuted(isMuted ?? false)
+            }
         }
         .onDisappear {
             model.stopObserving()
@@ -265,7 +394,7 @@ public struct EngineVideoPlayer: View {
     }
 
     private var topControls: some View {
-        HStack {
+        HStack(spacing: 12) {
             if let title, !title.isEmpty {
                 Text(title)
                     .font(.headline)
@@ -273,6 +402,20 @@ public struct EngineVideoPlayer: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
+            if let isMuted, let onMuteToggle {
+                Button(action: {
+                    onMuteToggle()
+                    model.revealControls()
+                }) {
+                    Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isMuted ? "Unmute" : "Mute")
+            }
         }
         .padding(.horizontal, 18)
         .padding(.top, 16)
@@ -356,6 +499,105 @@ public struct EngineVideoPlayer: View {
             return true
         default:
             return false
+        }
+    }
+}
+
+
+/// Transparent UIKit recognizers provide deterministic single-tap, double-tap,
+/// and press-and-hold arbitration. A single tap waits for double-tap/long-press
+/// recognition to fail, preventing a double tap from also toggling playback.
+private struct PlayerInteractionSurface: UIViewRepresentable {
+    let onSingleTap: () -> Void
+    let onDoubleTap: () -> Void
+    let onPressChanged: (Bool) -> Void
+    let onPressCancelled: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            onSingleTap: onSingleTap,
+            onDoubleTap: onDoubleTap,
+            onPressChanged: onPressChanged,
+            onPressCancelled: onPressCancelled
+        )
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.backgroundColor = .clear
+        view.isAccessibilityElement = false
+
+        let singleTap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleSingleTap)
+        )
+        singleTap.numberOfTapsRequired = 1
+
+        let doubleTap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleDoubleTap)
+        )
+        doubleTap.numberOfTapsRequired = 2
+
+        let longPress = UILongPressGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleLongPress(_:))
+        )
+        longPress.minimumPressDuration = 0.45
+
+        singleTap.require(toFail: doubleTap)
+        singleTap.require(toFail: longPress)
+        doubleTap.require(toFail: longPress)
+
+        view.addGestureRecognizer(singleTap)
+        view.addGestureRecognizer(doubleTap)
+        view.addGestureRecognizer(longPress)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.onSingleTap = onSingleTap
+        context.coordinator.onDoubleTap = onDoubleTap
+        context.coordinator.onPressChanged = onPressChanged
+        context.coordinator.onPressCancelled = onPressCancelled
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        coordinator.onPressCancelled()
+    }
+
+    final class Coordinator: NSObject {
+        var onSingleTap: () -> Void
+        var onDoubleTap: () -> Void
+        var onPressChanged: (Bool) -> Void
+        var onPressCancelled: () -> Void
+
+        init(
+            onSingleTap: @escaping () -> Void,
+            onDoubleTap: @escaping () -> Void,
+            onPressChanged: @escaping (Bool) -> Void,
+            onPressCancelled: @escaping () -> Void
+        ) {
+            self.onSingleTap = onSingleTap
+            self.onDoubleTap = onDoubleTap
+            self.onPressChanged = onPressChanged
+            self.onPressCancelled = onPressCancelled
+        }
+
+        @objc func handleSingleTap() { onSingleTap() }
+        @objc func handleDoubleTap() { onDoubleTap() }
+
+        @objc func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
+            switch recognizer.state {
+            case .began:
+                onPressChanged(true)
+            case .ended:
+                onPressChanged(false)
+            case .cancelled, .failed:
+                onPressCancelled()
+            default:
+                break
+            }
         }
     }
 }
