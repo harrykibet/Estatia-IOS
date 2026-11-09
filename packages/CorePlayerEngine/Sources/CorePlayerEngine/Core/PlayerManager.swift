@@ -19,6 +19,9 @@ public final class PlayerManager {
     private let bitrateController = DynamicBitrateController()
     private var bitrateTask: Task<Void, Never>?
     private var monitoredBitrateEngine: (any AVPlayerProviding)?
+    private var monitoredBitrateContentType: PlaybackContentType?
+    private var latestBitrateProgress: PlaybackProgress?
+    private var bitrateMonitoringGeneration: UInt64 = 0
     private var poolEnvironment = PlayerPoolEnvironment(
         physicalMemoryMB: Int(ProcessInfo.processInfo.physicalMemory / (1_024 * 1_024))
     )
@@ -90,10 +93,15 @@ public final class PlayerManager {
     public func start() {
 
         poolEnvironmentMonitor.start { [weak self] environment in
-            self?.poolEnvironment = environment
-            self?.pool.updateEnvironment(environment)
+            guard let self else { return }
+            self.poolEnvironment = environment
+            self.pool.updateEnvironment(environment)
+            self.applyCurrentBitratePolicy()
         }
 
+        networkRecovery.onNetworkSnapshotChange = { [weak self] _ in
+            self?.applyCurrentBitratePolicy()
+        }
         networkRecovery.start()
         
         environmentManager.start(
@@ -131,6 +139,7 @@ public final class PlayerManager {
         )
 
         activeMediaId = orchestrator.activeMediaId
+        guard activeMediaId == mediaId else { return }
         await startBitrateMonitoring(
             mediaId: mediaId,
             contentType: contentType
@@ -139,12 +148,15 @@ public final class PlayerManager {
     
     public func pause() async {
 
+        bitrateMonitoringGeneration &+= 1
         bitrateTask?.cancel()
         bitrateTask = nil
         if let monitoredBitrateEngine {
             bitrateController.reset(for: monitoredBitrateEngine)
             self.monitoredBitrateEngine = nil
         }
+        monitoredBitrateContentType = nil
+        latestBitrateProgress = nil
         await orchestrator.pauseCurrent()
         
         audioSession.abandon()
@@ -174,6 +186,11 @@ public final class PlayerManager {
         mediaId: String,
         contentType: PlaybackContentType
     ) async {
+        bitrateMonitoringGeneration &+= 1
+        let generation = bitrateMonitoringGeneration
+
+        guard activeMediaId == mediaId else { return }
+
         bitrateTask?.cancel()
         bitrateTask = nil
 
@@ -181,22 +198,28 @@ public final class PlayerManager {
             bitrateController.reset(for: previousEngine)
         }
 
+        monitoredBitrateEngine = nil
+        monitoredBitrateContentType = nil
+        latestBitrateProgress = nil
+
         guard let events = await orchestrator.observeEvents(mediaId: mediaId),
-              let provider = await orchestrator.avPlayerProvider(mediaId: mediaId)
+              generation == bitrateMonitoringGeneration,
+              activeMediaId == mediaId,
+              let provider = await orchestrator.avPlayerProvider(mediaId: mediaId),
+              generation == bitrateMonitoringGeneration,
+              activeMediaId == mediaId
         else {
-            monitoredBitrateEngine = nil
             return
         }
 
         monitoredBitrateEngine = provider
-
-        let controller = bitrateController
-        let network = networkMonitor
+        monitoredBitrateContentType = contentType
 
         bitrateTask = Task { @MainActor [weak self] in
             for await event in events {
                 guard !Task.isCancelled,
                       let self,
+                      self.bitrateMonitoringGeneration == generation,
                       self.activeMediaId == mediaId
                 else {
                     return
@@ -206,32 +229,46 @@ public final class PlayerManager {
                     continue
                 }
 
-                let snapshot = network.currentSnapshot
-                let loadedEnd = progress.buffered ?? progress.currentTime
-                let bufferAhead = max(0, loadedEnd - progress.currentTime)
-                let environment = self.poolEnvironment
-
-                // AVPlayer access-log observations provide a device-measured
-                // bitrate estimate. When no access-log sample exists, the
-                // policy uses its conservative default throughput.
-                let input = BitratePolicyInput(
-                    estimatedThroughputBps: provider.observedBitrateBps,
-                    bufferAheadSeconds: bufferAhead,
-                    thermalState: environment.thermalState,
-                    isLowPowerModeEnabled: environment.isLowPowerModeEnabled,
-                    isMetered: snapshot.isExpensive,
-                    isConstrained: snapshot.isConstrained,
-                    contentType: contentType,
-                    isStartup: progress.currentTime < 5
-                )
-
-                controller.apply(input, to: provider)
+                self.latestBitrateProgress = progress
+                self.applyCurrentBitratePolicy()
             }
         }
     }
 
+    /// Re-evaluates the current ceiling whenever progress or the surrounding
+    /// network/resource environment changes. A progress sample is required so
+    /// buffer health is based on measured playback state rather than a guess.
+    private func applyCurrentBitratePolicy() {
+        guard let provider = monitoredBitrateEngine,
+              let contentType = monitoredBitrateContentType,
+              let progress = latestBitrateProgress
+        else {
+            return
+        }
+
+        let loadedEnd = progress.buffered ?? progress.currentTime
+        let bufferAhead = max(0, loadedEnd - progress.currentTime)
+        let snapshot = networkMonitor.currentSnapshot
+        let environment = poolEnvironment
+
+        let input = BitratePolicyInput(
+            estimatedThroughputBps: provider.observedBitrateBps,
+            bufferAheadSeconds: bufferAhead,
+            thermalState: environment.thermalState,
+            isLowPowerModeEnabled: environment.isLowPowerModeEnabled,
+            isMetered: snapshot.isExpensive,
+            isConstrained: snapshot.isConstrained,
+            contentType: contentType,
+            isStartup: progress.currentTime < 5
+        )
+
+        bitrateController.apply(input, to: provider)
+    }
+
     public func shutdown() async {
         
+        bitrateMonitoringGeneration &+= 1
+        networkRecovery.onNetworkSnapshotChange = nil
         networkRecovery.stop()
         poolEnvironmentMonitor.stop()
         bitrateTask?.cancel()
@@ -240,6 +277,8 @@ public final class PlayerManager {
             bitrateController.reset(for: monitoredBitrateEngine)
             self.monitoredBitrateEngine = nil
         }
+        monitoredBitrateContentType = nil
+        latestBitrateProgress = nil
         bitrateController.resetAll()
 
         audioSession.cleanup()
