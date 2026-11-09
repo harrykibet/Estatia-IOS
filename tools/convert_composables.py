@@ -68,8 +68,8 @@ for sf in swift_files:
             body_lines.append(f'                EstatiaText("{lit_match.group(1)}")')
     if hasTextField:
         # Only emit bindings when the Swift view model declares the corresponding state and labels.
-        hasEmailBinding = re.search(r'@Published\\s+(?:public\\s+)?var\\s+email\\b', text) is not None and re.search(r'\\bemailPlaceholder\\b', text) is not None
-        hasPasswordBinding = re.search(r'@Published\\s+(?:public\\s+)?var\\s+password\\b', text) is not None and re.search(r'\\bpasswordPlaceholder\\b', text) is not None
+        hasEmailBinding = re.search(r'@Published\s+(?:public\s+)?var\s+email\b', text) is not None and re.search(r'\bemailPlaceholder\b', text) is not None
+        hasPasswordBinding = re.search(r'@Published\s+(?:public\s+)?var\s+password\b', text) is not None and re.search(r'\bpasswordPlaceholder\b', text) is not None
         if 'email' in ksrc and hasEmailBinding:
             body_lines.append('                EstatiaTextField(text: $viewModel.email, placeholder: viewModel.emailPlaceholder)')
         if 'password' in ksrc and hasPasswordBinding:
@@ -78,7 +78,7 @@ for sf in swift_files:
         body_lines.append('                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {')
         body_lines.append('                    viewModel.login()')
         body_lines.append('                }')
-    hasGoogleSignInApi = re.search(r'\\bfunc\\s+googleSignIn\\s*\\(', text) is not None
+    hasGoogleSignInApi = re.search(r'\bfunc\s+googleSignIn\s*\(', text) is not None
     if hasGoogle and hasGoogleSignInApi:
         body_lines.append('                GoogleSignInButton(isLoading: viewModel.isLoading, isEnabled: !viewModel.isLoading) {')
         body_lines.append('                    viewModel.googleSignIn()')
