@@ -6,6 +6,7 @@
 //
 
 
+@MainActor
 final class AppNavigationController {
     
     let state: NavigationState
