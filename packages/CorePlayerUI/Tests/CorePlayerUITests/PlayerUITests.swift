@@ -47,26 +47,34 @@ import CorePlayerEngine
 
 @Test @MainActor func playerViewModelShowsLowBandwidthOnlyDuringActivePlayback() async {
     let engine = LowBandwidthTestPlayerEngine()
+    engine.isSustainedLowBandwidth = true
     let model = PlayerViewModel(engine: engine)
     model.startObserving()
 
+    // A view attaching after detection has already occurred receives the current snapshot.
+    #expect(model.isLowBandwidth)
+    #expect(!model.shouldShowLowBandwidthWarning)
+
+    for _ in 0..<20 { await Task.yield() }
     engine.emit(state: .playing)
-    engine.emit(event: .lowBandwidthChanged(isSustained: true))
     for _ in 0..<20 { await Task.yield() }
 
     #expect(model.isLowBandwidth)
     #expect(model.shouldShowLowBandwidthWarning)
 
-    engine.emit(state: .paused)
-    for _ in 0..<20 { await Task.yield() }
-
-    #expect(model.isLowBandwidth)
-    #expect(!model.shouldShowLowBandwidthWarning)
-
+    engine.isSustainedLowBandwidth = false
     engine.emit(event: .lowBandwidthChanged(isSustained: false))
     for _ in 0..<20 { await Task.yield() }
 
     #expect(!model.isLowBandwidth)
+    #expect(!model.shouldShowLowBandwidthWarning)
+
+    engine.emit(state: .paused)
+    engine.isSustainedLowBandwidth = true
+    engine.emit(event: .lowBandwidthChanged(isSustained: true))
+    for _ in 0..<20 { await Task.yield() }
+
+    #expect(model.isLowBandwidth)
     #expect(!model.shouldShowLowBandwidthWarning)
     model.stopObserving()
 }
