@@ -77,7 +77,7 @@ jobs:
         xcodebuild clean build-for-testing \
           -project estatia.xcodeproj \
           -scheme estatia \
-          -destination "platform=iOS Simulator,OS=26.2,name=iPhone 17 Pro" \
+          -destination "platform=iOS Simulator,OS=26.2,name=iPhone 17 Pro,arch=arm64" \
           -derivedDataPath build \
           CODE_SIGNING_ALLOWED=NO
 
