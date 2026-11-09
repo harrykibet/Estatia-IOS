@@ -22,3 +22,25 @@ import CorePlayerEngine
     #expect(PlayerTimeFormatter.string(from: .infinity) == "0:00")
     #expect(PlayerTimeFormatter.string(from: .nan) == "0:00")
 }
+
+@Test func pressAndHoldPausesAndResumesOnlyPlaybackThatWasAlreadyActive() {
+    var interaction = PlayerHoldInteraction()
+
+    #expect(interaction.handle(.began, isPlaying: true) == .pause)
+    #expect(interaction.handle(.ended, isPlaying: false) == .resume)
+}
+
+@Test func pressAndHoldDoesNotStartPreviouslyPausedPlayback() {
+    var interaction = PlayerHoldInteraction()
+
+    #expect(interaction.handle(.began, isPlaying: false) == .none)
+    #expect(interaction.handle(.ended, isPlaying: false) == .none)
+}
+
+@Test func cancelledPressDoesNotResumePlayback() {
+    var interaction = PlayerHoldInteraction()
+
+    #expect(interaction.handle(.began, isPlaying: true) == .pause)
+    #expect(interaction.handle(.cancelled, isPlaying: false) == .none)
+    #expect(interaction.handle(.ended, isPlaying: false) == .none)
+}
