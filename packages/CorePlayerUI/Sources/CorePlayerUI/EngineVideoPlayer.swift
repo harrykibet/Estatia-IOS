@@ -9,7 +9,11 @@ import SwiftUI
 import AVKit
 import Combine
 import CorePlayerEngine
+#if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 /// Formats playback positions consistently across the player controls.
 public enum PlayerTimeFormatter {
@@ -341,11 +345,11 @@ public struct EngineVideoPlayer: View {
             model.setMuted(isMuted ?? false)
             model.revealControls()
         }
-        .onChange(of: isMuted) { _, newValue in
-            model.setMuted(newValue ?? false)
+        .task(id: isMuted) {
+            model.setMuted(isMuted ?? false)
         }
-        .onChange(of: model.hasPresentationPlayer) { _, hasPlayer in
-            if hasPlayer {
+        .task(id: model.hasPresentationPlayer) {
+            if model.hasPresentationPlayer {
                 model.setMuted(isMuted ?? false)
             }
         }
@@ -504,6 +508,7 @@ public struct EngineVideoPlayer: View {
 }
 
 
+#if canImport(UIKit)
 /// Transparent UIKit recognizers provide deterministic single-tap, double-tap,
 /// and press-and-hold arbitration. A single tap waits for double-tap/long-press
 /// recognition to fail, preventing a double tap from also toggling playback.
@@ -556,16 +561,19 @@ private struct PlayerInteractionSurface: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        context.coordinator.onSingleTap = onSingleTap
-        context.coordinator.onDoubleTap = onDoubleTap
-        context.coordinator.onPressChanged = onPressChanged
-        context.coordinator.onPressCancelled = onPressCancelled
+        context.coordinator.update(
+            onSingleTap: onSingleTap,
+            onDoubleTap: onDoubleTap,
+            onPressChanged: onPressChanged,
+            onPressCancelled: onPressCancelled
+        )
     }
 
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
         coordinator.onPressCancelled()
     }
 
+    @MainActor
     final class Coordinator: NSObject {
         var onSingleTap: () -> Void
         var onDoubleTap: () -> Void
@@ -573,6 +581,18 @@ private struct PlayerInteractionSurface: UIViewRepresentable {
         var onPressCancelled: () -> Void
 
         init(
+            onSingleTap: @escaping () -> Void,
+            onDoubleTap: @escaping () -> Void,
+            onPressChanged: @escaping (Bool) -> Void,
+            onPressCancelled: @escaping () -> Void
+        ) {
+            self.onSingleTap = onSingleTap
+            self.onDoubleTap = onDoubleTap
+            self.onPressChanged = onPressChanged
+            self.onPressCancelled = onPressCancelled
+        }
+
+        func update(
             onSingleTap: @escaping () -> Void,
             onDoubleTap: @escaping () -> Void,
             onPressChanged: @escaping (Bool) -> Void,
@@ -601,6 +621,118 @@ private struct PlayerInteractionSurface: UIViewRepresentable {
         }
     }
 }
+#elseif canImport(AppKit)
+/// AppKit equivalent keeps the package buildable on its declared macOS target.
+private struct PlayerInteractionSurface: NSViewRepresentable {
+    let onSingleTap: () -> Void
+    let onDoubleTap: () -> Void
+    let onPressChanged: (Bool) -> Void
+    let onPressCancelled: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            onSingleTap: onSingleTap,
+            onDoubleTap: onDoubleTap,
+            onPressChanged: onPressChanged,
+            onPressCancelled: onPressCancelled
+        )
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+
+        let singleTap = NSClickGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleSingleTap)
+        )
+        singleTap.numberOfClicksRequired = 1
+
+        let doubleTap = NSClickGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleDoubleTap)
+        )
+        doubleTap.numberOfClicksRequired = 2
+
+        let longPress = NSPressGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleLongPress(_:))
+        )
+        longPress.minimumPressDuration = 0.45
+
+        singleTap.require(toFail: doubleTap)
+        singleTap.require(toFail: longPress)
+        doubleTap.require(toFail: longPress)
+
+        view.addGestureRecognizer(singleTap)
+        view.addGestureRecognizer(doubleTap)
+        view.addGestureRecognizer(longPress)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.update(
+            onSingleTap: onSingleTap,
+            onDoubleTap: onDoubleTap,
+            onPressChanged: onPressChanged,
+            onPressCancelled: onPressCancelled
+        )
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.onPressCancelled()
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var onSingleTap: () -> Void
+        var onDoubleTap: () -> Void
+        var onPressChanged: (Bool) -> Void
+        var onPressCancelled: () -> Void
+
+        init(
+            onSingleTap: @escaping () -> Void,
+            onDoubleTap: @escaping () -> Void,
+            onPressChanged: @escaping (Bool) -> Void,
+            onPressCancelled: @escaping () -> Void
+        ) {
+            self.onSingleTap = onSingleTap
+            self.onDoubleTap = onDoubleTap
+            self.onPressChanged = onPressChanged
+            self.onPressCancelled = onPressCancelled
+        }
+
+        func update(
+            onSingleTap: @escaping () -> Void,
+            onDoubleTap: @escaping () -> Void,
+            onPressChanged: @escaping (Bool) -> Void,
+            onPressCancelled: @escaping () -> Void
+        ) {
+            self.onSingleTap = onSingleTap
+            self.onDoubleTap = onDoubleTap
+            self.onPressChanged = onPressChanged
+            self.onPressCancelled = onPressCancelled
+        }
+
+        @objc func handleSingleTap() { onSingleTap() }
+        @objc func handleDoubleTap() { onDoubleTap() }
+
+        @objc func handleLongPress(_ recognizer: NSPressGestureRecognizer) {
+            switch recognizer.state {
+            case .began:
+                onPressChanged(true)
+            case .ended:
+                onPressChanged(false)
+            case .cancelled, .failed:
+                onPressCancelled()
+            default:
+                break
+            }
+        }
+    }
+}
+#endif
 
 private struct PlayerProgressBar: View {
     @State private var isEditing = false
