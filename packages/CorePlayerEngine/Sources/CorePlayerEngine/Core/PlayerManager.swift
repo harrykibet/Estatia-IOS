@@ -193,6 +193,9 @@ public final class PlayerManager {
 
         guard activeMediaId == mediaId else { return }
 
+        _ = lowBandwidthDetector.reset()
+        isSustainedLowBandwidth = false
+
         bitrateTask?.cancel()
         bitrateTask = nil
 
@@ -217,8 +220,6 @@ public final class PlayerManager {
         monitoredBitrateEngine = provider
         monitoredBitrateContentType = contentType
 
-        _ = lowBandwidthDetector.reset()
-        isSustainedLowBandwidth = false
         await orchestrator.notifySustainedLowBandwidth(
             mediaId: mediaId,
             isSustained: false
