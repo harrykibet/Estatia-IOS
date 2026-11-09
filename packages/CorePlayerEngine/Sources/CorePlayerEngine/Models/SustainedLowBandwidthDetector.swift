@@ -12,6 +12,7 @@ struct SustainedLowBandwidthDetector: Sendable {
 
     private(set) var consecutiveLowSampleCount = 0
     private(set) var isSustainedLowBandwidth = false
+    private var previousThroughputBps: Double?
 
     /// Records one measured throughput sample.
     ///
@@ -24,6 +25,14 @@ struct SustainedLowBandwidthDetector: Sendable {
         else {
             return false
         }
+
+        // Android's BandwidthMeter flow applies distinctUntilChanged before
+        // incrementing its consecutive-sample counter. Mirror that here so
+        // repeated progress ticks do not count the same access-log estimate.
+        guard previousThroughputBps != throughputBps else {
+            return false
+        }
+        previousThroughputBps = throughputBps
 
         let previousState = isSustainedLowBandwidth
 
@@ -50,6 +59,7 @@ struct SustainedLowBandwidthDetector: Sendable {
         let previousState = isSustainedLowBandwidth
         consecutiveLowSampleCount = 0
         isSustainedLowBandwidth = false
+        previousThroughputBps = nil
         return previousState
     }
 }
