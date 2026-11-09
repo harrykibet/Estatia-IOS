@@ -16,6 +16,7 @@ final class DefaultPlayerEngine: PlayerEngine, AVPlayerProviding {
     
     private let stateEmitter = PlayerEventEmitter<PlayerState>()
     private let eventEmitter = PlayerEventEmitter<PlayerEvent>()
+    private(set) var isSustainedLowBandwidth = false
     
     init(
         config: PlayerConfiguration,
@@ -125,6 +126,8 @@ final class DefaultPlayerEngine: PlayerEngine, AVPlayerProviding {
     }
 
     func notifySustainedLowBandwidth(_ isSustained: Bool) async {
+        guard isSustainedLowBandwidth != isSustained else { return }
+        isSustainedLowBandwidth = isSustained
         eventEmitter.emit(.lowBandwidthChanged(isSustained: isSustained))
     }
 }
