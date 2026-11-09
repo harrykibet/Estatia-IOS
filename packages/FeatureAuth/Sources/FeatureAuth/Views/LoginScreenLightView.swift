@@ -18,9 +18,6 @@ public struct LoginScreenLightView: View {
                 EstatiaText("Real Estate App")
                 EstatiaTextField(text: $viewModel.email, placeholder: viewModel.emailPlaceholder)
                 EstatiaTextField(text: $viewModel.password, placeholder: viewModel.passwordPlaceholder)
-                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {
-                    viewModel.login()
-                }
                 GoogleSignInButton(isLoading: viewModel.isLoading, isEnabled: !viewModel.isLoading) {
                     viewModel.googleSignIn()
                 }

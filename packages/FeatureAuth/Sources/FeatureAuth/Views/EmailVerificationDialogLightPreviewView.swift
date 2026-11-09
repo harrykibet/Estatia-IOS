@@ -13,9 +13,6 @@ public struct EmailVerificationDialogLightPreviewView: View {
         ScrollView {
             VStack(alignment: .center, spacing: 16) {
                 EstatiaText("Verify your email")
-                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {
-                    viewModel.login()
-                }
                 EstatiaCircularProgress(state: viewModel.isLoading ? .indeterminate : .idle)
             }
             .frame(maxWidth: .infinity)

@@ -13,9 +13,6 @@ public struct LoadingStateView: View {
         ScrollView {
             VStack(alignment: .center, spacing: 16) {
                 EstatiaText("Real Estate App")
-                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {
-                    viewModel.login()
-                }
                 EstatiaCircularProgress(state: viewModel.isLoading ? .indeterminate : .idle)
             }
             .frame(maxWidth: .infinity)

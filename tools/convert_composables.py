@@ -44,8 +44,8 @@ for sf in swift_files:
     hasImage = 'Image(' in ksrc
     hasTextField = 'TextField' in ksrc or 'EstatiaTextField' in ksrc
     hasButton = 'EstatiaButton' in ksrc or 'EstatiaPrimaryButton' in ksrc or 'EstatiaOutlinedButton' in ksrc
-    # Login actions belong only to credential forms, not arbitrary property/stat buttons.
-    hasLoginForm = hasTextField and ('email' in ksrc or 'password' in ksrc)
+    # Emit a login control only when the Swift view model already implements its API.
+    hasLoginViewModelApi = re.search(r'\b(?:var|let)\s+loginTitle\b', text) is not None and re.search(r'\bfunc\s+login\s*\(', text) is not None
     hasGoogle = 'GoogleSignInButton' in ksrc
     hasProgress = 'CircularProgressIndicator' in ksrc
     # Heuristic body construction
@@ -72,7 +72,7 @@ for sf in swift_files:
             body_lines.append('                EstatiaTextField(text: .email, placeholder: viewModel.emailPlaceholder)')
         if 'password' in ksrc:
             body_lines.append('                EstatiaTextField(text: .password, placeholder: viewModel.passwordPlaceholder)')
-    if hasButton and hasLoginForm:
+    if hasButton and hasLoginViewModelApi:
         body_lines.append('                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {')
         body_lines.append('                    viewModel.login()')
         body_lines.append('                }')

@@ -16,9 +16,6 @@ public struct ProfileStatItemView: View {
                     .frame(width: 120, height: 120)
                     .clipShape(Circle())
                 EstatiaText("Real Estate App")
-                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {
-                    viewModel.login()
-                }
             }
             .frame(maxWidth: .infinity)
         }
