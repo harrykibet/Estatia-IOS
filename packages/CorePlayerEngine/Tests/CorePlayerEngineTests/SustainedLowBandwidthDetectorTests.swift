@@ -14,6 +14,21 @@ final class SustainedLowBandwidthDetectorTests: XCTestCase {
         XCTAssertTrue(detector.isSustainedLowBandwidth)
     }
 
+    func testDuplicateThroughputValuesDoNotCountAsNewSamples() {
+        var detector = SustainedLowBandwidthDetector()
+
+        XCTAssertFalse(detector.record(throughputBps: 400_000))
+        XCTAssertFalse(detector.record(throughputBps: 400_000))
+        XCTAssertEqual(detector.consecutiveLowSampleCount, 1)
+
+        XCTAssertFalse(detector.record(throughputBps: 450_000))
+        XCTAssertFalse(detector.record(throughputBps: 450_000))
+        XCTAssertEqual(detector.consecutiveLowSampleCount, 2)
+
+        XCTAssertTrue(detector.record(throughputBps: 490_000))
+        XCTAssertTrue(detector.isSustainedLowBandwidth)
+    }
+
     func testRecoveryThresholdUsesHysteresis() {
         var detector = SustainedLowBandwidthDetector()
 
