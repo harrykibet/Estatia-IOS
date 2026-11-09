@@ -16,11 +16,6 @@ public struct LoginScreenLightView: View {
                     .frame(width: 120, height: 120)
                     .clipShape(Circle())
                 EstatiaText("Real Estate App")
-                EstatiaTextField(text: $viewModel.email, placeholder: viewModel.emailPlaceholder)
-                EstatiaTextField(text: $viewModel.password, placeholder: viewModel.passwordPlaceholder)
-                GoogleSignInButton(isLoading: viewModel.isLoading, isEnabled: !viewModel.isLoading) {
-                    viewModel.googleSignIn()
-                }
                 EstatiaCircularProgress(state: viewModel.isLoading ? .indeterminate : .idle)
             }
             .frame(maxWidth: .infinity)

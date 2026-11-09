@@ -13,8 +13,6 @@ public struct UserTypeDropdownMenuView: View {
         ScrollView {
             VStack(alignment: .center, spacing: 16) {
                 EstatiaText("Real Estate App")
-                EstatiaTextField(text: $viewModel.email, placeholder: viewModel.emailPlaceholder)
-                EstatiaTextField(text: $viewModel.password, placeholder: viewModel.passwordPlaceholder)
                 EstatiaCircularProgress(state: viewModel.isLoading ? .indeterminate : .idle)
             }
             .frame(maxWidth: .infinity)

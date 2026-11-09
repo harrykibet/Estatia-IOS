@@ -13,8 +13,6 @@ public struct ForgotPasswordConfirmButtonView: View {
         ScrollView {
             VStack(alignment: .center, spacing: 16) {
                 EstatiaText("Reset password")
-                EstatiaTextField(text: $viewModel.email, placeholder: viewModel.emailPlaceholder)
-                EstatiaTextField(text: $viewModel.password, placeholder: viewModel.passwordPlaceholder)
             }
             .frame(maxWidth: .infinity)
         }
