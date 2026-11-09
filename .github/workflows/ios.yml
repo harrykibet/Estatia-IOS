@@ -82,13 +82,27 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
 
     # =========================
+    # ▶️ Execute unit and UI tests
+    # =========================
+    - name: Run tests
+      run: |
+        xcodebuild test-without-building \
+          -project estatia.xcodeproj \
+          -scheme estatia \
+          -destination "platform=iOS Simulator,OS=26.2,name=iPhone 17 Pro,arch=arm64" \
+          -derivedDataPath build \
+          -resultBundlePath build/TestResults.xcresult \
+          -parallel-testing-enabled NO \
+          CODE_SIGNING_ALLOWED=NO
+
+    # =========================
     # 📦 Artifacts on failure
     # =========================
-    - name: Upload logs
+    - name: Upload CI diagnostics
       if: failure()
       uses: actions/upload-artifact@v5
       with:
-        name: xcode-build-logs
+        name: xcode-ci-diagnostics
         path: |
           build
           ~/Library/Logs/DiagnosticReports
