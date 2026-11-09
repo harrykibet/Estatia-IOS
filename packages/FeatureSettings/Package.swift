@@ -13,13 +13,15 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(path: "../CoreAppData")
+        .package(path: "../CoreAppData"),
+        .package(path: "../CoreDesignSystem")
     ],
     targets: [
         .target(
             name: "FeatureSettings",
             dependencies: [
-                .product(name: "CoreAppData", package: "CoreAppData")
+                .product(name: "CoreAppData", package: "CoreAppData"),
+                .product(name: "CoreDesignSystem", package: "CoreDesignSystem")
             ]
         ),
         .testTarget(

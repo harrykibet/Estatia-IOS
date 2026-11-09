@@ -10,12 +10,14 @@ let package = Package(
         .library(name: "FeatureHome", targets: ["FeatureHome"]),
     ],
     dependencies: [
+        .package(path: "../CoreDesignSystem"),
         .package(path: "../CoreAppData")
     ],
     targets: [
         .target(
             name: "FeatureHome",
             dependencies: [
+                .product(name: "CoreDesignSystem", package: "CoreDesignSystem"),
                 .product(name: "CoreAppData", package: "CoreAppData")
             ]
         ),

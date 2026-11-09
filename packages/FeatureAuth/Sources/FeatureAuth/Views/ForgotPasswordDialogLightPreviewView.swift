@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/auth/src/main/java/com/estatia/realestate/apps/feature/auth/ui/screens/ForgotPasswordDialog.kt composable ForgotPasswordDialogLightPreview
 import SwiftUI
+import CoreDesignSystem
 
 public struct ForgotPasswordDialogLightPreviewView: View {
     @StateObject public var viewModel = ForgotPasswordDialogLightPreviewViewModel()
@@ -12,11 +13,6 @@ public struct ForgotPasswordDialogLightPreviewView: View {
         ScrollView {
             VStack(alignment: .center, spacing: 16) {
                 EstatiaText("Reset password")
-                EstatiaTextField(text: $viewModel.email, placeholder: viewModel.emailPlaceholder)
-                EstatiaTextField(text: $viewModel.password, placeholder: viewModel.passwordPlaceholder)
-                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {
-                    viewModel.login()
-                }
             }
             .frame(maxWidth: .infinity)
         }

@@ -10,12 +10,14 @@ let package = Package(
         .library(name: "FeatureComments", targets: ["FeatureComments"]),
     ],
     dependencies: [
+        .package(path: "../CoreDesignSystem"),
         .package(path: "../CoreAppData")
     ],
     targets: [
         .target(
             name: "FeatureComments",
             dependencies: [
+                .product(name: "CoreDesignSystem", package: "CoreDesignSystem"),
                 .product(name: "CoreAppData", package: "CoreAppData")
             ]
         ),

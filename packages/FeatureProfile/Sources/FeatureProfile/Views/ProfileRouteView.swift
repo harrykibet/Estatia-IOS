@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/profile/src/main/java/com/estatia/realestate/apps/feature/profile/ui/screens/ProfileScreen.kt composable ProfileRoute
 import SwiftUI
+import CoreDesignSystem
 
 public struct ProfileRouteView: View {
     @StateObject public var viewModel = ProfileRouteViewModel()
@@ -15,9 +16,6 @@ public struct ProfileRouteView: View {
                     .frame(width: 120, height: 120)
                     .clipShape(Circle())
                 EstatiaText("Real Estate App")
-                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {
-                    viewModel.login()
-                }
             }
             .frame(maxWidth: .infinity)
         }

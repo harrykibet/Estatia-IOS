@@ -44,6 +44,8 @@ for sf in swift_files:
     hasImage = 'Image(' in ksrc
     hasTextField = 'TextField' in ksrc or 'EstatiaTextField' in ksrc
     hasButton = 'EstatiaButton' in ksrc or 'EstatiaPrimaryButton' in ksrc or 'EstatiaOutlinedButton' in ksrc
+    # Emit a login control only when the Swift view model already implements its API.
+    hasLoginViewModelApi = re.search(r'\b(?:var|let)\s+loginTitle\b', text) is not None and re.search(r'\bfunc\s+login\s*\(', text) is not None
     hasGoogle = 'GoogleSignInButton' in ksrc
     hasProgress = 'CircularProgressIndicator' in ksrc
     # Heuristic body construction
@@ -65,16 +67,19 @@ for sf in swift_files:
         if lit_match:
             body_lines.append(f'                EstatiaText("{lit_match.group(1)}")')
     if hasTextField:
-        # detect parameters names
-        if 'email' in ksrc:
-            body_lines.append('                EstatiaTextField(text: .email, placeholder: viewModel.emailPlaceholder)')
-        if 'password' in ksrc:
-            body_lines.append('                EstatiaTextField(text: .password, placeholder: viewModel.passwordPlaceholder)')
-    if hasButton:
+        # Only emit bindings when the Swift view model declares the corresponding state and labels.
+        hasEmailBinding = re.search(r'@Published\s+(?:public\s+)?var\s+email\b', text) is not None and re.search(r'\bemailPlaceholder\b', text) is not None
+        hasPasswordBinding = re.search(r'@Published\s+(?:public\s+)?var\s+password\b', text) is not None and re.search(r'\bpasswordPlaceholder\b', text) is not None
+        if 'email' in ksrc and hasEmailBinding:
+            body_lines.append('                EstatiaTextField(text: $viewModel.email, placeholder: viewModel.emailPlaceholder)')
+        if 'password' in ksrc and hasPasswordBinding:
+            body_lines.append('                EstatiaTextField(text: $viewModel.password, placeholder: viewModel.passwordPlaceholder)')
+    if hasButton and hasLoginViewModelApi:
         body_lines.append('                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {')
         body_lines.append('                    viewModel.login()')
         body_lines.append('                }')
-    if hasGoogle:
+    hasGoogleSignInApi = re.search(r'\bfunc\s+googleSignIn\s*\(', text) is not None
+    if hasGoogle and hasGoogleSignInApi:
         body_lines.append('                GoogleSignInButton(isLoading: viewModel.isLoading, isEnabled: !viewModel.isLoading) {')
         body_lines.append('                    viewModel.googleSignIn()')
         body_lines.append('                }')

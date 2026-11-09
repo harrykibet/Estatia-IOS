@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/auth/src/main/java/com/estatia/realestate/apps/feature/auth/ui/screens/PhoneVerificationDialog.kt composable PhoneVerificationDialog
 import SwiftUI
+import CoreDesignSystem
 
 public struct PhoneVerificationDialogView: View {
     @StateObject public var viewModel = PhoneVerificationDialogViewModel()
@@ -12,9 +13,6 @@ public struct PhoneVerificationDialogView: View {
         ScrollView {
             VStack(alignment: .center, spacing: 16) {
                 EstatiaText("Real Estate App")
-                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {
-                    viewModel.login()
-                }
                 EstatiaCircularProgress(state: viewModel.isLoading ? .indeterminate : .idle)
             }
             .frame(maxWidth: .infinity)
