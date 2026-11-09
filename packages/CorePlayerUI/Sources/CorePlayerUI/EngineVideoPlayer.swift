@@ -661,9 +661,14 @@ private struct PlayerInteractionSurface: NSViewRepresentable {
         )
         longPress.minimumPressDuration = 0.45
 
-        singleTap.require(toFail: doubleTap)
-        singleTap.require(toFail: longPress)
-        doubleTap.require(toFail: longPress)
+        singleTap.delegate = context.coordinator
+        doubleTap.delegate = context.coordinator
+        longPress.delegate = context.coordinator
+        context.coordinator.setRecognizers(
+            singleTap: singleTap,
+            doubleTap: doubleTap,
+            longPress: longPress
+        )
 
         view.addGestureRecognizer(singleTap)
         view.addGestureRecognizer(doubleTap)
@@ -685,11 +690,38 @@ private struct PlayerInteractionSurface: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, NSGestureRecognizerDelegate {
         var onSingleTap: () -> Void
         var onDoubleTap: () -> Void
         var onPressChanged: (Bool) -> Void
         var onPressCancelled: () -> Void
+        private weak var singleTapRecognizer: NSClickGestureRecognizer?
+        private weak var doubleTapRecognizer: NSClickGestureRecognizer?
+        private weak var longPressRecognizer: NSPressGestureRecognizer?
+
+        func setRecognizers(
+            singleTap: NSClickGestureRecognizer,
+            doubleTap: NSClickGestureRecognizer,
+            longPress: NSPressGestureRecognizer
+        ) {
+            singleTapRecognizer = singleTap
+            doubleTapRecognizer = doubleTap
+            longPressRecognizer = longPress
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: NSGestureRecognizer,
+            shouldRequireFailureOf otherGestureRecognizer: NSGestureRecognizer
+        ) -> Bool {
+            if gestureRecognizer === singleTapRecognizer {
+                return otherGestureRecognizer === doubleTapRecognizer
+                    || otherGestureRecognizer === longPressRecognizer
+            }
+            if gestureRecognizer === doubleTapRecognizer {
+                return otherGestureRecognizer === longPressRecognizer
+            }
+            return false
+        }
 
         init(
             onSingleTap: @escaping () -> Void,
