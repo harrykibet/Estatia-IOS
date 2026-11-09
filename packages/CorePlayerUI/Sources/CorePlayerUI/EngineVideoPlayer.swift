@@ -72,6 +72,7 @@ struct PlayerHoldInteraction {
 public final class PlayerViewModel: ObservableObject {
     @Published public private(set) var presentationPlayer: AVPlayer?
     @Published public private(set) var state: PlayerState = .idle
+    @Published public private(set) var isLowBandwidth = false
     @Published public private(set) var currentTime: TimeInterval = 0
     @Published public private(set) var duration: TimeInterval?
     @Published public private(set) var bufferedTime: TimeInterval?
@@ -101,6 +102,12 @@ public final class PlayerViewModel: ObservableObject {
         state.isSeekable && (duration ?? 0) > 0
     }
 
+    /// The low-bandwidth notice is informational and appears only while the
+    /// transport is actively playing or buffering.
+    public var shouldShowLowBandwidthWarning: Bool {
+        isLowBandwidth && (state == .playing || state == .buffering)
+    }
+
     public func startObserving() {
         guard stateTask == nil, eventsTask == nil else { return }
         refreshPresentationPlayer()
@@ -118,16 +125,26 @@ public final class PlayerViewModel: ObservableObject {
             }
         }
 
-        eventsTask = Task { [weak self, engine] in
-            for await event in engine.events {
+        // Subscribe before reading the snapshot: any change racing with this
+        // read is also buffered in the stream and cannot be missed.
+        let eventStream = engine.events
+        isLowBandwidth = engine.isSustainedLowBandwidth
+
+        eventsTask = Task { [weak self] in
+            for await event in eventStream {
                 guard let self else { return }
-                if case let .progress(progress) = event {
+                switch event {
+                case let .progress(progress):
                     self.currentTime = max(0, progress.currentTime)
                     self.duration = progress.duration
                     self.bufferedTime = progress.buffered
                     if !self.isSeeking {
                         self.seekPosition = self.currentTime
                     }
+                case let .lowBandwidthChanged(isSustained):
+                    self.isLowBandwidth = isSustained
+                default:
+                    break
                 }
             }
         }
@@ -322,6 +339,17 @@ public struct EngineVideoPlayer: View {
 
             centerContent
 
+            if model.shouldShowLowBandwidthWarning {
+                VStack {
+                    PlaybackLowBandwidthOverlay()
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 76)
+                .allowsHitTesting(false)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             if model.areControlsVisible {
                 VStack(spacing: 0) {
                     topControls
@@ -340,6 +368,7 @@ public struct EngineVideoPlayer: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: model.areControlsVisible)
+        .animation(.easeInOut(duration: 0.2), value: model.shouldShowLowBandwidthWarning)
         .onAppear {
             model.startObserving()
             model.setMuted(isMuted ?? false)
@@ -843,6 +872,24 @@ private struct PlayerProgressBar: View {
         }
         .frame(height: 28)
         .opacity(isEnabled ? 1 : 0.55)
+    }
+}
+
+private struct PlaybackLowBandwidthOverlay: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 20, weight: .semibold))
+            Text("Weak connection. Video quality may be reduced.")
+                .font(.subheadline)
+                .multilineTextAlignment(.leading)
+        }
+        .foregroundStyle(.white)
+        .padding(16)
+        .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+        .padding(16)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("PlaybackLowBandwidthWarning")
     }
 }
 

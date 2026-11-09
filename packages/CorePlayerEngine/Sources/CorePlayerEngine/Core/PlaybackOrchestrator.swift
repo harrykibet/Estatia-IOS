@@ -322,6 +322,31 @@ public final class PlaybackOrchestrator {
         return managed.engine as? any AVPlayerProviding
     }
 
+    /// Delivers bandwidth quality changes to the engine without modifying
+    /// its authoritative transport state (playing, buffering, paused, etc.).
+    public func notifySustainedLowBandwidth(
+        mediaId: String,
+        isSustained: Bool
+    ) async {
+        guard pendingMediaId == nil,
+              activeMediaId == mediaId,
+              let managed = await pool.get(mediaId: mediaId)
+        else {
+            return
+        }
+
+        // Pool lookup is asynchronous; revalidate ownership before publishing
+        // so an old media sample cannot affect a newly selected player.
+        guard pendingMediaId == nil,
+              activeMediaId == mediaId,
+              managed.mediaId == mediaId
+        else {
+            return
+        }
+
+        await managed.engine.notifySustainedLowBandwidth(isSustained)
+    }
+
     public func currentState(
         mediaId: String
     ) async -> PlayerState? {

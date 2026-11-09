@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import CorePlayerEngine
 @testable import CorePlayerUI
@@ -44,3 +45,77 @@ import CorePlayerEngine
     #expect(interaction.handle(.cancelled, isPlaying: false) == .none)
     #expect(interaction.handle(.ended, isPlaying: false) == .none)
 }
+
+@Test @MainActor func playerViewModelShowsLowBandwidthOnlyDuringActivePlayback() async {
+    let engine = LowBandwidthTestPlayerEngine()
+    engine.isSustainedLowBandwidth = true
+    let model = PlayerViewModel(engine: engine)
+    model.startObserving()
+
+    // A view attaching after detection has already occurred receives the current snapshot.
+    #expect(model.isLowBandwidth)
+    #expect(!model.shouldShowLowBandwidthWarning)
+
+    for _ in 0..<20 { await Task.yield() }
+    engine.emit(state: .playing)
+    for _ in 0..<20 { await Task.yield() }
+
+    #expect(model.isLowBandwidth)
+    #expect(model.shouldShowLowBandwidthWarning)
+
+    engine.isSustainedLowBandwidth = false
+    engine.emit(event: .lowBandwidthChanged(isSustained: false))
+    for _ in 0..<20 { await Task.yield() }
+
+    #expect(!model.isLowBandwidth)
+    #expect(!model.shouldShowLowBandwidthWarning)
+
+    engine.emit(state: .paused)
+    engine.isSustainedLowBandwidth = true
+    engine.emit(event: .lowBandwidthChanged(isSustained: true))
+    for _ in 0..<20 { await Task.yield() }
+
+    #expect(model.isLowBandwidth)
+    #expect(!model.shouldShowLowBandwidthWarning)
+    model.stopObserving()
+}
+
+@MainActor
+private final class LowBandwidthTestPlayerEngine: PlayerEngine {
+    private let stateEmitter = PlayerEventEmitter<PlayerState>()
+    private let eventEmitter = PlayerEventEmitter<PlayerEvent>()
+    var isSustainedLowBandwidth = false
+
+    var state: AsyncStream<PlayerState> { stateEmitter.stream }
+    var events: AsyncStream<PlayerEvent> { eventEmitter.stream }
+
+    var currentState: PlayerState {
+        get async { .idle }
+    }
+
+    var currentTime: TimeInterval {
+        get async { 0 }
+    }
+
+    var duration: TimeInterval? {
+        get async { 60 }
+    }
+
+    func load(_ source: MediaSource) async throws {}
+    func play() async throws {}
+    func pause() async throws {}
+    func seek(to seconds: TimeInterval) async throws {}
+    func stop() async throws {}
+    func release() async throws {}
+    func notifyNetworkLost() async {}
+    func notifyRecoveryExhausted() async {}
+
+    func emit(state: PlayerState) {
+        stateEmitter.emit(state)
+    }
+
+    func emit(event: PlayerEvent) {
+        eventEmitter.emit(event)
+    }
+}
+

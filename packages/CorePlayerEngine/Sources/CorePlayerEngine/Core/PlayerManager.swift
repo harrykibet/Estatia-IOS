@@ -22,6 +22,8 @@ public final class PlayerManager {
     private var monitoredBitrateContentType: PlaybackContentType?
     private var latestBitrateProgress: PlaybackProgress?
     private var bitrateMonitoringGeneration: UInt64 = 0
+    private var lowBandwidthDetector = SustainedLowBandwidthDetector()
+    public private(set) var isSustainedLowBandwidth = false
     private var poolEnvironment = PlayerPoolEnvironment(
         physicalMemoryMB: Int(ProcessInfo.processInfo.physicalMemory / (1_024 * 1_024))
     )
@@ -191,6 +193,9 @@ public final class PlayerManager {
 
         guard activeMediaId == mediaId else { return }
 
+        _ = lowBandwidthDetector.reset()
+        isSustainedLowBandwidth = false
+
         bitrateTask?.cancel()
         bitrateTask = nil
 
@@ -215,6 +220,11 @@ public final class PlayerManager {
         monitoredBitrateEngine = provider
         monitoredBitrateContentType = contentType
 
+        await orchestrator.notifySustainedLowBandwidth(
+            mediaId: mediaId,
+            isSustained: false
+        )
+
         bitrateTask = Task { @MainActor [weak self] in
             for await event in events {
                 guard !Task.isCancelled,
@@ -230,9 +240,36 @@ public final class PlayerManager {
                 }
 
                 self.latestBitrateProgress = progress
+                await self.updateSustainedLowBandwidth(
+                    throughputBps: provider.observedBitrateBps,
+                    mediaId: mediaId
+                )
                 self.applyCurrentBitratePolicy()
             }
         }
+    }
+
+    /// Updates the warning only when the detector crosses a threshold.
+    /// Throughput is sampled alongside playback progress, not on every
+    /// environment notification, to avoid counting the same access-log value
+    /// multiple times between media samples.
+    private func updateSustainedLowBandwidth(
+        throughputBps: Double?,
+        mediaId: String
+    ) async {
+        guard activeMediaId == mediaId else { return }
+
+        let changed = lowBandwidthDetector.record(
+            throughputBps: throughputBps
+        )
+        guard changed else { return }
+
+        let nextState = lowBandwidthDetector.isSustainedLowBandwidth
+        isSustainedLowBandwidth = nextState
+        await orchestrator.notifySustainedLowBandwidth(
+            mediaId: mediaId,
+            isSustained: nextState
+        )
     }
 
     /// Re-evaluates the current ceiling whenever progress or the surrounding
@@ -266,6 +303,15 @@ public final class PlayerManager {
     }
 
     public func shutdown() async {
+
+        if let activeMediaId {
+            await orchestrator.notifySustainedLowBandwidth(
+                mediaId: activeMediaId,
+                isSustained: false
+            )
+        }
+        _ = lowBandwidthDetector.reset()
+        isSustainedLowBandwidth = false
         
         bitrateMonitoringGeneration &+= 1
         networkRecovery.onNetworkSnapshotChange = nil
