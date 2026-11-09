@@ -33,6 +33,9 @@ public protocol PlayerEngine: AnyObject {
 
     /// Terminates an unsuccessful automatic recovery cycle.
     func notifyRecoveryExhausted() async
+
+    /// Publishes a sustained-bandwidth warning without changing transport state.
+    func notifySustainedLowBandwidth(_ isSustained: Bool) async
     
     // MARK: - State
 
@@ -50,6 +53,9 @@ public protocol PlayerEngine: AnyObject {
 }
 
 public extension PlayerEngine {
+
+    /// Existing custom engines may ignore the optional quality notification.
+    func notifySustainedLowBandwidth(_ isSustained: Bool) async {}
 
     func load(
         mediaId: String,
