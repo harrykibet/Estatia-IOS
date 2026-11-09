@@ -120,6 +120,36 @@ final class NetworkRecoveryCoordinatorTests: XCTestCase {
         }
     }
 
+    func testNetworkSnapshotsAreForwardedToObservers() async {
+        let network = FakeNetwork()
+        let playback = FakePlayback()
+        let snapshotReceived = expectation(
+            description: "Network snapshots are forwarded to observers"
+        )
+        let expected = NetworkSnapshot(
+            status: .satisfied,
+            isExpensive: true,
+            isConstrained: true
+        )
+
+        let coordinator = NetworkRecoveryCoordinator(
+            network: network,
+            playback: playback,
+            policy: policy
+        )
+        coordinator.onNetworkSnapshotChange = { snapshot in
+            if snapshot == expected {
+                snapshotReceived.fulfill()
+            }
+        }
+
+        coordinator.start()
+        network.emit(expected)
+
+        await fulfillment(of: [snapshotReceived], timeout: 1)
+        coordinator.stop()
+    }
+
     func testNetworkLossMarksActivePlaybackReconnecting()
         async {
 
