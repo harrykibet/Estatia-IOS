@@ -9,7 +9,7 @@ public final class AppCoordinator: ObservableObject {
     private let navigationState: NavigationState
     public let container: AppDIContainer
 
-    public init(container: AppDIContainer, navigationState: NavigationState) {
+    init(container: AppDIContainer, navigationState: NavigationState) {
         self.container = container
         self.navigationState = navigationState
     }
