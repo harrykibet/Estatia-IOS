@@ -75,6 +75,7 @@ import CorePlayerEngine
 private final class LowBandwidthTestPlayerEngine: PlayerEngine {
     private let stateEmitter = PlayerEventEmitter<PlayerState>()
     private let eventEmitter = PlayerEventEmitter<PlayerEvent>()
+    var isSustainedLowBandwidth = false
 
     var state: AsyncStream<PlayerState> { stateEmitter.stream }
     var events: AsyncStream<PlayerEvent> { eventEmitter.stream }
