@@ -123,4 +123,8 @@ final class DefaultPlayerEngine: PlayerEngine, AVPlayerProviding {
     func notifyRecoveryExhausted() async {
         await actor.notifyRecoveryExhausted()
     }
+
+    func notifySustainedLowBandwidth(_ isSustained: Bool) async {
+        eventEmitter.emit(.lowBandwidthChanged(isSustained: isSustained))
+    }
 }
