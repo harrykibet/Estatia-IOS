@@ -116,7 +116,7 @@ public final class AppDIContainer {
     @MainActor
     public func makeView(
         for destination: FeatureDestination,
-        onAuthenticated: @escaping @MainActor () -> Void = {}
+        onAuthenticated: @escaping @MainActor @Sendable () -> Void = {}
     ) -> AnyView {
         switch destination {
         case .home:
