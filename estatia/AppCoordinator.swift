@@ -2,6 +2,7 @@ import SwiftUI
 import CoreModel
 import CoreDesignSystem
 
+@MainActor
 public final class AppCoordinator: ObservableObject {
     // Use the shared AppTabID from CoreDesignSystem for consistency across the app
     public typealias AppTab = AppTabID
@@ -17,7 +18,7 @@ public final class AppCoordinator: ObservableObject {
     // Expose selectedTab as a façade to the central NavigationState
     public var selectedTab: AppTab {
         get { navigationState.selectedTab }
-        set { Task { await MainActor.run { self.navigationState.selectedTab = newValue } } }
+        set { navigationState.selectedTab = newValue }
     }
 
     public var currentUser: User {
@@ -29,7 +30,9 @@ public final class AppCoordinator: ObservableObject {
     }
 
     public func view(for destination: AppDIContainer.FeatureDestination) -> AnyView {
-        container.makeView(for: destination)
+        container.makeView(for: destination) { [weak self] in
+            self?.selectedTab = .home
+        }
     }
 }
 
