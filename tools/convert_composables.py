@@ -44,6 +44,8 @@ for sf in swift_files:
     hasImage = 'Image(' in ksrc
     hasTextField = 'TextField' in ksrc or 'EstatiaTextField' in ksrc
     hasButton = 'EstatiaButton' in ksrc or 'EstatiaPrimaryButton' in ksrc or 'EstatiaOutlinedButton' in ksrc
+    # Login actions belong only to credential forms, not arbitrary property/stat buttons.
+    hasLoginForm = hasTextField and ('email' in ksrc or 'password' in ksrc)
     hasGoogle = 'GoogleSignInButton' in ksrc
     hasProgress = 'CircularProgressIndicator' in ksrc
     # Heuristic body construction
@@ -70,7 +72,7 @@ for sf in swift_files:
             body_lines.append('                EstatiaTextField(text: .email, placeholder: viewModel.emailPlaceholder)')
         if 'password' in ksrc:
             body_lines.append('                EstatiaTextField(text: .password, placeholder: viewModel.passwordPlaceholder)')
-    if hasButton:
+    if hasButton and hasLoginForm:
         body_lines.append('                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {')
         body_lines.append('                    viewModel.login()')
         body_lines.append('                }')
