@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/property/src/main/java/com/estatia/realestate/apps/feature/property/ui/screens/BasicDetailsForm.kt composable BasicDetailsFormLightPreview
 import SwiftUI
+import CoreDesignSystem
 
 public struct BasicDetailsFormLightPreviewView: View {
     @StateObject public var viewModel = BasicDetailsFormLightPreviewViewModel()

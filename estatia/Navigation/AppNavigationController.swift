@@ -6,6 +6,7 @@
 //
 
 
+@MainActor
 final class AppNavigationController {
     
     let state: NavigationState
@@ -36,7 +37,6 @@ final class AppNavigationController {
             
             authCompleted: { [state] in
                 state.selectedTab = .home
-                state.authStack = []
             }
         )
     }

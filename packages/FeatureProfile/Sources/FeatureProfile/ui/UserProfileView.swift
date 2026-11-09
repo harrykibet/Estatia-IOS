@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreModel
+import CoreAppData
 
 public struct UserProfileView: View {
     @StateObject private var viewModel: ProfileViewModel
@@ -149,25 +150,32 @@ struct InfoRow: View {
     }
 }
 
-#Preview {
-    let mockUser = User(
+private struct PreviewUserRepository: UserRepository {
+    let user = User(
         userId: "123",
-        name: "Harry Kibet",
-        email: "harry@example.com",
-        phoneNumber: "+254712345678",
-        profilePictureUrl:"https://i.pravatar.cc/150?img=3",
+        name: "Preview User",
+        email: "preview@example.com",
+        phoneNumber: nil,
+        profilePictureUrl: nil,
         userType: .landlord,
         verified: true,
-        likedProperties: ["property_1", "property_2"]    )
+        likedProperties: ["property_1", "property_2"]
+    )
 
-    struct MockRepo: UserRepository {
-        func fetchUser(id: String) async throws -> User { mockUser }
-        func updateUser(_ user: User) async throws -> User { user }
-        func deleteUser(id: String) async throws {}
-        func fetchFavoritePropertyIds(userId: String) async throws -> [String] { mockUser.likedProperties }
-        func addFavoriteProperty(userId: String, propertyId: String) async throws {}
-        func removeFavoriteProperty(userId: String, propertyId: String) async throws {}
-    }
+    func fetchUser(id: String) async throws -> User { user }
+    func updateUser(_ user: User) async throws -> User { user }
+    func deleteUser(id: String) async throws {}
+    func fetchFavoritePropertyIds(userId: String) async throws -> [String] { user.likedProperties }
+    func addFavoriteProperty(userId: String, propertyId: String) async throws {}
+    func removeFavoriteProperty(userId: String, propertyId: String) async throws {}
+}
 
-    UserProfileView(viewModel: ProfileViewModel(repository: MockRepo(), initialUser: mockUser))
+#Preview {
+    let repository = PreviewUserRepository()
+    UserProfileView(
+        viewModel: ProfileViewModel(
+            repository: repository,
+            initialUser: repository.user
+        )
+    )
 }

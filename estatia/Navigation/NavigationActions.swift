@@ -14,12 +14,12 @@ public struct NavigationActions {
     
     // MARK: - Global Navigation
     
-    public var switchTab: (AppTabID) -> Void
-    public var navigateHome: () -> Void
-    public var navigateProfile: (ProfileDestination) -> Void
-    public var navigateSearch: (SearchDestination) -> Void
+    public var switchTab: @MainActor (AppTabID) -> Void
+    public var navigateHome: @MainActor () -> Void
+    public var navigateProfile: @MainActor (ProfileDestination) -> Void
+    public var navigateSearch: @MainActor (SearchDestination) -> Void
     
     // MARK: - Auth Flow (global boundary)
     
-    public var authCompleted: () -> Void
+    public var authCompleted: @MainActor () -> Void
 }

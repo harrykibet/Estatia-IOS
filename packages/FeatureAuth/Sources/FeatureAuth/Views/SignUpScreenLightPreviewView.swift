@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/auth/src/main/java/com/estatia/realestate/apps/feature/auth/ui/screens/SignUpScreen.kt composable SignUpScreenLightPreview
 import SwiftUI
+import CoreDesignSystem
 
 public struct SignUpScreenLightPreviewView: View {
     @StateObject public var viewModel = SignUpScreenLightPreviewViewModel()
@@ -12,11 +13,6 @@ public struct SignUpScreenLightPreviewView: View {
         ScrollView {
             VStack(alignment: .center, spacing: 16) {
                 EstatiaText("Real Estate App")
-                EstatiaTextField(text: $viewModel.email, placeholder: viewModel.emailPlaceholder)
-                EstatiaTextField(text: $viewModel.password, placeholder: viewModel.passwordPlaceholder)
-                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {
-                    viewModel.login()
-                }
                 EstatiaCircularProgress(state: viewModel.isLoading ? .indeterminate : .idle)
             }
             .frame(maxWidth: .infinity)

@@ -14,6 +14,7 @@ let package = Package(
         ),
     ],
     dependencies: [
+        .package(path: "../CoreDesignSystem"),
         .package(path: "../CoreModel"),
         .package(path: "../CoreAppData")
     ],
@@ -21,6 +22,7 @@ let package = Package(
         .target(
             name: "FeatureProfile",
             dependencies: [
+                .product(name: "CoreDesignSystem", package: "CoreDesignSystem"),
                 .product(name: "CoreModel", package: "CoreModel"),
                 .product(name: "CoreAppData", package: "CoreAppData")
             ]

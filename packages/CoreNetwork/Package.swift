@@ -13,6 +13,7 @@ let package = Package(
         ),
     ],
     dependencies: [
+        .package(path: "../CoreCommon"),
         .package(path: "../CoreModel"),
         .package(
             url: "https://github.com/firebase/firebase-ios-sdk.git",
@@ -23,6 +24,7 @@ let package = Package(
         .target(
             name: "CoreNetwork",
             dependencies: [
+                .product(name: "CoreCommon", package: "CoreCommon"),
                 .product(name: "CoreModel", package: "CoreModel"),
                 .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
                 .product(name: "FirebaseFirestore", package: "firebase-ios-sdk")

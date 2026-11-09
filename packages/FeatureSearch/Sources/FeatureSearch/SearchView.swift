@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import CoreAppData
+import CoreModel
 
 public struct SearchView: View {
     @StateObject private var viewModel: SearchViewModel
@@ -65,19 +67,6 @@ public struct SearchView: View {
     }
 }
 
-#Preview {
-    struct MockRepo: PropertyRepository {
-        func fetchProperty(id: String) async throws -> PropertyModel { PropertyModel() }
-        func fetchProperties() async throws -> [PropertyModel] { [] }
-        func searchProperties(query: String?, filters: PropertySearchFilters) async throws -> [PropertyModel] { [PropertyModel()] }
-        func createProperty(_ property: PropertyModel) async throws -> PropertyModel { property }
-        func updateProperty(_ property: PropertyModel) async throws -> PropertyModel { property }
-        func deleteProperty(id: String) async throws {}
-    }
-
-    SearchView(viewModel: SearchViewModel(repository: RemotePropertyRepository(remote: NoopPropertyRemoteDataSource())))
-}
-
 // MARK: - Custom Card View
 struct SearchResultCard: View {
     let title: String
@@ -102,6 +91,17 @@ struct SearchResultCard: View {
     }
 }
 
+// Keep preview dependencies local to the feature package. The app composition
+// root owns the concrete remote repository and data-source implementations.
+private struct SearchPreviewRepository: PropertyRepository {
+    func fetchProperty(id: String) async throws -> PropertyModel { PropertyModel() }
+    func fetchProperties() async throws -> [PropertyModel] { [] }
+    func searchProperties(query: String?, filters: PropertySearchFilters) async throws -> [PropertyModel] { [] }
+    func createProperty(_ property: PropertyModel) async throws -> PropertyModel { property }
+    func updateProperty(_ property: PropertyModel) async throws -> PropertyModel { property }
+    func deleteProperty(id: String) async throws {}
+}
+
 #Preview {
-    SearchView()
+    SearchView(viewModel: SearchViewModel(repository: SearchPreviewRepository()))
 }

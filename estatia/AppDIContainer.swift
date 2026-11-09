@@ -113,7 +113,11 @@ public final class AppDIContainer {
         FeatureScope(appScope: appScope)
     }
 
-    public func makeView(for destination: FeatureDestination) -> AnyView {
+    @MainActor
+    public func makeView(
+        for destination: FeatureDestination,
+        onAuthenticated: @escaping @MainActor @Sendable () -> Void = {}
+    ) -> AnyView {
         switch destination {
         case .home:
             // Wire MVVM for Home: create a property repository and inject into the HomeViewModel
@@ -154,7 +158,15 @@ public final class AppDIContainer {
         case .service:
             return AnyView(ServiceView(viewModel: ServiceViewModel()))
         case .auth:
-            return AnyView(AuthView(viewModel: AuthViewModel()))
+            let authRepository = RemoteAuthRepository(
+                remote: FirebaseAuthRemoteDataSource()
+            )
+            return AnyView(
+                FeatureAuth.AuthRootView(
+                    authRepository: authRepository,
+                    onAuthenticated: onAuthenticated
+                )
+            )
         }
     }
 }

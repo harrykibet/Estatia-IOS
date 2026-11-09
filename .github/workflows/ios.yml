@@ -15,7 +15,7 @@ jobs:
     # 📥 Checkout
     # =========================
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     # =========================
     # 🧠 Force Xcode 26.6
@@ -54,12 +54,44 @@ jobs:
     # ⚡ SwiftPM Cache
     # =========================
     - name: Cache SwiftPM
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.swiftpm
           ~/Library/Caches/org.swift.swiftpm
         key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved') }}
+
+    # =========================
+    # 🔐 Restore Firebase configuration from GitHub Actions secret
+    # =========================
+    - name: Restore Firebase plist
+      env:
+        GOOGLE_SERVICES_PLIST_B64: ${{ secrets.GOOGLE_SERVICES_PLIST_B64 }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "${GOOGLE_SERVICES_PLIST_B64:-}" ]; then
+          echo "::error::Missing repository Actions secret GOOGLE_SERVICES_PLIST_B64. Add the Base64-encoded GoogleService-Info.plist under Settings > Secrets and variables > Actions."
+          exit 1
+        fi
+
+        PLIST_PATH="estatia/GoogleService-Info.plist"
+        mkdir -p "$(dirname "$PLIST_PATH")"
+
+        printf '%s' "$GOOGLE_SERVICES_PLIST_B64" |
+          python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.buffer.read(), validate=True))' \
+          > "$PLIST_PATH"
+
+        test -s "$PLIST_PATH"
+        plutil -lint "$PLIST_PATH"
+
+        BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' "$PLIST_PATH")"
+        if [ "$BUNDLE_ID" != "com.application.estatia" ]; then
+          echo "::error::Firebase plist BUNDLE_ID does not match com.application.estatia."
+          exit 1
+        fi
+
+        echo "Firebase plist restored and validated."
 
     # =========================
     # 📦 Resolve Dependencies
@@ -77,18 +109,33 @@ jobs:
         xcodebuild clean build-for-testing \
           -project estatia.xcodeproj \
           -scheme estatia \
-          -destination "platform=iOS Simulator,OS=26.2,name=iPhone 17 Pro" \
+          -destination "platform=iOS Simulator,OS=26.2,name=iPhone 17 Pro,arch=arm64" \
           -derivedDataPath build \
+          CODE_SIGNING_ALLOWED=NO
+
+    # =========================
+    # ▶️ Execute unit and UI tests
+    # =========================
+    - name: Run tests
+      run: |
+        xcodebuild test-without-building \
+          -project estatia.xcodeproj \
+          -scheme estatia \
+          -destination "platform=iOS Simulator,OS=26.2,name=iPhone 17 Pro,arch=arm64" \
+          -derivedDataPath build \
+          -resultBundlePath build/TestResults.xcresult \
+          -parallel-testing-enabled NO \
           CODE_SIGNING_ALLOWED=NO
 
     # =========================
     # 📦 Artifacts on failure
     # =========================
-    - name: Upload logs
+    - name: Upload CI diagnostics
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
-        name: xcode-build-logs
+        name: xcode-ci-diagnostics
         path: |
-          build
+          build/TestResults.xcresult
           ~/Library/Logs/DiagnosticReports
+        if-no-files-found: ignore

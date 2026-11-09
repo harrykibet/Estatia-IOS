@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/settings/src/main/java/com/estatia/realestate/apps/feature/settings/SettingsScreen.kt composable SettingsSectionTitle
 import SwiftUI
+import CoreDesignSystem
 
 public struct SettingsSectionTitleView: View {
     @StateObject public var viewModel = SettingsSectionTitleViewModel()

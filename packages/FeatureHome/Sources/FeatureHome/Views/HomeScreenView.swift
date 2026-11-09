@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/home/src/main/java/com/estatia/realestate/apps/feature/home/ui/screens/HomeScreen.kt composable HomeScreen
 import SwiftUI
+import CoreDesignSystem
 
 public struct HomeScreenView: View {
     @StateObject public var viewModel = HomeScreenViewModel()
@@ -12,9 +13,6 @@ public struct HomeScreenView: View {
         ScrollView {
             VStack(alignment: .center, spacing: 16) {
                 EstatiaText("Real Estate App")
-                EstatiaPrimaryButton(title: viewModel.loginTitle, isEnabled: !viewModel.isLoading, isLoading: viewModel.isLoading) {
-                    viewModel.login()
-                }
                 EstatiaCircularProgress(state: viewModel.isLoading ? .indeterminate : .idle)
             }
             .frame(maxWidth: .infinity)

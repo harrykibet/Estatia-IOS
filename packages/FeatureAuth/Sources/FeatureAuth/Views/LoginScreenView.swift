@@ -78,6 +78,7 @@ public struct LoginScreenView: View {
     }
 }
 
+@MainActor
 public final class LoginScreenViewModel: ObservableObject {
     @Published public var email: String = ""
     @Published public var password: String = ""

@@ -1,5 +1,6 @@
 // Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/settings/src/main/java/com/estatia/realestate/apps/feature/settings/SettingsScreen.kt composable SettingsScreenLightPreview
 import SwiftUI
+import CoreDesignSystem
 
 public struct SettingsScreenLightPreviewView: View {
     @StateObject public var viewModel = SettingsScreenLightPreviewViewModel()
