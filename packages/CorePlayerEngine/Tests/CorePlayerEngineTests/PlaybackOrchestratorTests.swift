@@ -190,6 +190,25 @@ final class PlaybackOrchestratorTests: XCTestCase {
         ) async {}
     }
 
+    @MainActor
+    final class GatedStreamingPipeline: StreamingPipeline {
+        let gate: ManualAsyncGate
+        private(set) var didStartWarm = false
+
+        init(gate: ManualAsyncGate) {
+            self.gate = gate
+        }
+
+        func warm(
+            mediaId: String,
+            source: MediaSource,
+            priority: WarmPriority
+        ) async {
+            didStartWarm = true
+            await gate.wait()
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeSource(_ mediaId: String) -> MediaSource {
@@ -265,6 +284,42 @@ final class PlaybackOrchestratorTests: XCTestCase {
 
         let missingEngine = await orchestrator.playerEngine(for: "missing")
         XCTAssertNil(missingEngine)
+    }
+
+    func testEngineReadyCallbackRunsBeforeVisibleCacheWarmCompletes() async throws {
+        let warmGate = ManualAsyncGate()
+        let streaming = GatedStreamingPipeline(gate: warmGate)
+        let engine = FakePlayerEngine()
+        let pool = PlayerPool(
+            configuration: PlayerPoolConfiguration(maxPlayers: 2, maxIdlePlayers: 1),
+            factory: { engine }
+        )
+        let orchestrator = PlaybackOrchestrator(
+            pool: pool,
+            streamingPipeline: streaming
+        )
+        var callbackEngine: (any PlayerEngine)?
+
+        let playTask = Task { @MainActor in
+            try await orchestrator.play(
+                mediaId: "visible",
+                source: makeSource("visible"),
+                onEngineReady: { readyEngine in
+                    callbackEngine = readyEngine
+                }
+            )
+        }
+
+        await waitUntil {
+            streaming.didStartWarm && callbackEngine != nil
+        }
+
+        let handedOffEngine = try XCTUnwrap(callbackEngine)
+        XCTAssertTrue(handedOffEngine === engine)
+        XCTAssertEqual(orchestrator.activeMediaId, "visible")
+
+        warmGate.resume()
+        try await playTask.value
     }
 
     // MARK: - Per-Player Command Ordering
