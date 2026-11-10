@@ -57,28 +57,45 @@ public struct HomeView: View {
         }
     }
 
+    private var feedItems: [HomeFeedItem] {
+        viewModel.properties.enumerated().map { entry in
+            let propertyID = entry.element.id?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let identity: String
+            if let propertyID, !propertyID.isEmpty {
+                identity = "property:\(propertyID)"
+            } else {
+                identity = "legacy-index:\(entry.offset)"
+            }
+            return HomeFeedItem(
+                id: identity,
+                index: entry.offset,
+                property: entry.element
+            )
+        }
+    }
+
     private var propertyFeed: some View {
         ScrollView(.vertical) {
             LazyVStack(spacing: 0) {
-                ForEach(Array(viewModel.properties.enumerated()), id: \.offset) { index, property in
+                ForEach(feedItems) { item in
                     HomeFeedCardView(
-                        property: property,
-                        engine: property.id.flatMap { playbackController.engines[$0] },
+                        property: item.property,
+                        engine: item.property.id.flatMap { playbackController.engines[$0] },
                         isMuted: playbackController.isMuted,
                         onMuteToggle: playbackController.toggleMute
                     )
                     .containerRelativeFrame(.vertical)
                     .onAppear {
-                        playbackController.setComposed(true, property: property)
+                        playbackController.setComposed(true, property: item.property)
                     }
                     .onDisappear {
-                        playbackController.setComposed(false, property: property)
+                        playbackController.setComposed(false, property: item.property)
                     }
                     .onScrollVisibilityChange(threshold: 0.6) { isVisible in
                         guard isVisible else { return }
                         playbackController.itemBecameVisible(
                             in: viewModel.properties,
-                            at: index
+                            at: item.index
                         )
                     }
                 }
@@ -91,6 +108,12 @@ public struct HomeView: View {
             await viewModel.load(forceRefresh: true)
         }
     }
+}
+
+private struct HomeFeedItem: Identifiable {
+    let id: String
+    let index: Int
+    let property: PropertyModel
 }
 
 private struct HomeFeedCardView: View {
@@ -112,6 +135,7 @@ private struct HomeFeedCardView: View {
                         onMuteToggle: onMuteToggle
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
+                    .id(ObjectIdentifier(engine))
                 } else {
                     poster
                         .frame(width: geometry.size.width, height: geometry.size.height)
