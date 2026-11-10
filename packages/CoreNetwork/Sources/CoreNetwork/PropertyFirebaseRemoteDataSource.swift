@@ -1,9 +1,6 @@
 import Foundation
 import CoreModel
-
-#if canImport(FirebaseFirestore) && canImport(FirebaseFirestoreSwift)
 import FirebaseFirestore
-import FirebaseFirestoreSwift
 
 public final class FirebasePropertyRemoteDataSource: PropertyRemoteDataSource {
     private let db: Firestore
@@ -98,4 +95,3 @@ public final class FirebasePropertyRemoteDataSource: PropertyRemoteDataSource {
         try await db.collection(collectionName).document(id).delete()
     }
 }
-#endif
