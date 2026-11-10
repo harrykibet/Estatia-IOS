@@ -34,3 +34,26 @@ import CoreModel
 
     #expect(HomeViewModel.playbackItem(for: property) == nil)
 }
+
+@Test func prefersHLSOverDirectVideoURL() async throws {
+    var property = PropertyModel()
+    property.id = "property-44"
+    property.hlsUrl = ["https://cdn.example.test/stream.m3u8"]
+    property.directVideoUrls = ["https://cdn.example.test/fallback.mp4"]
+    property.videoUrl = ["https://legacy.example.test/legacy.mp4"]
+
+    let item = HomeViewModel.playbackItem(for: property)
+
+    #expect(item?.source.url.absoluteString == "https://cdn.example.test/stream.m3u8")
+}
+
+@Test func fallsBackToDirectVideoWhenHLSIsUnavailable() async throws {
+    var property = PropertyModel()
+    property.id = "property-45"
+    property.hlsUrl = ["file:///tmp/invalid.m3u8"]
+    property.directVideoUrls = ["https://cdn.example.test/direct.mp4"]
+
+    let item = HomeViewModel.playbackItem(for: property)
+
+    #expect(item?.source.url.absoluteString == "https://cdn.example.test/direct.mp4")
+}
