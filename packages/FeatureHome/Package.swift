@@ -4,7 +4,8 @@ import PackageDescription
 let package = Package(
     name: "FeatureHome",
     platforms: [
-        .iOS(.v18)
+        .iOS(.v18),
+        .macOS(.v13)
     ],
     products: [
         .library(name: "FeatureHome", targets: ["FeatureHome"]),
