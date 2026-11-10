@@ -22,6 +22,14 @@ public protocol PlayerEngine: AnyObject {
 
     func pause() async throws
 
+    /// Temporarily pauses transport without discarding the user's desired
+    /// playback state. Used for OS audio-focus interruptions such as calls.
+    func pauseForAudioInterruption() async
+
+    /// Ends an OS audio interruption. Resumption is allowed only when both
+    /// the system and the still-current playback intent permit it.
+    func resumeFromAudioInterruption(shouldResume: Bool) async throws
+
     func seek(to seconds: TimeInterval) async throws
 
     func stop() async throws
@@ -67,6 +75,19 @@ public protocol PlayerEngine: AnyObject {
 public extension PlayerEngine {
 
     var isSustainedLowBandwidth: Bool { false }
+
+    /// Compatibility fallback for custom engines. The AVFoundation engine
+    /// overrides this to preserve its actor-owned desired-playback intent.
+    func pauseForAudioInterruption() async {
+        try? await pause()
+    }
+
+    /// Compatibility fallback for custom engines. Engines with an explicit
+    /// intent model should override this method.
+    func resumeFromAudioInterruption(shouldResume: Bool) async throws {
+        guard shouldResume else { return }
+        try await play()
+    }
 
     var shouldResumeAfterInterruption: Bool {
         get async {
