@@ -17,6 +17,9 @@ public final class DefaultStreamingPipeline:
     private let cacheKeyFactory:
         MediaCacheKeyProviding
 
+    private let codecNegotiator:
+        StreamingCodecNegotiator
+
     public init(
         cdns: [Cdn] = [],
         cacheWarmer:
@@ -29,7 +32,10 @@ public final class DefaultStreamingPipeline:
             DefaultLatencyMeasurer(),
         cacheKeyFactory:
             MediaCacheKeyProviding =
-            DefaultMediaCacheKeyFactory()
+            DefaultMediaCacheKeyFactory(),
+        codecNegotiator:
+            StreamingCodecNegotiator =
+            StreamingCodecNegotiator()
     ) {
         self.cacheWarmer =
             cacheWarmer
@@ -47,6 +53,9 @@ public final class DefaultStreamingPipeline:
 
         self.cacheKeyFactory =
             cacheKeyFactory
+
+        self.codecNegotiator =
+            codecNegotiator
     }
 
     public func warm(
@@ -71,15 +80,19 @@ public final class DefaultStreamingPipeline:
                     source
             )
 
+        // Use the negotiated variant for warming too, but keep the cache key
+        // tied to the original logical media identity above.
+        let negotiatedSource = codecNegotiator.negotiate(source)
+
         var networkSource =
-            source
+            negotiatedSource
 
         if let selector =
             cdnSelector,
            let best =
             await selector.selectBestCdn(
                 forPath:
-                    source.url.path
+                    negotiatedSource.url.path
             ) {
 
             let base =
@@ -109,11 +122,11 @@ public final class DefaultStreamingPipeline:
                         url:
                             resolved,
                         type:
-                            source.type,
+                            negotiatedSource.type,
                         headers:
-                            source.headers,
+                            negotiatedSource.headers,
                         metadata:
-                            source.metadata
+                            negotiatedSource.metadata
                     )
             }
         }
