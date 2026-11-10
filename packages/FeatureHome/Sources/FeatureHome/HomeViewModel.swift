@@ -68,7 +68,7 @@ public final class HomeViewModel: ObservableObject {
         return FeedPlaybackItem(
             mediaId: mediaID,
             source: MediaSource(url: url),
-            matchScore: 0.5,
+            matchScore: property.matchScore,
             title: property.title,
             artist: property.ownerName
         )
