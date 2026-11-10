@@ -1,6 +1,6 @@
 import Foundation
 
-public struct PropertyModel: Codable, Identifiable {
+public struct PropertyModel: Codable, Identifiable, Sendable {
     public var id: String?
     public var title: String?
     public var description: String?
