@@ -3,166 +3,34 @@ import SwiftUI
 
 import CoreAppData
 import CoreModel
-import CorePlayerEngine
 
 @MainActor
 public final class HomeViewModel: ObservableObject {
     @Published public private(set) var properties: [PropertyModel] = []
     @Published public private(set) var isLoading = false
-    @Published public private(set) var loadError: String?
-    @Published public private(set) var isMuted = true
+    @Published public private(set) var errorMessage: String?
 
     private let repository: PropertyRepository
-    private let playerManager: PlayerManager
-    private let playbackCoordinator: VideoPlaybackCoordinator
-    private var composedMediaIDs: Set<String> = []
-    private var feedGeneration: UInt64 = 0
-    private var pinRevision: UInt64 = 0
+    private var hasLoaded = false
 
-    public init(
-        repository: PropertyRepository,
-        playerManager: PlayerManager? = nil
-    ) {
-        let manager = playerManager ?? PlayerManager.shared
+    public init(repository: PropertyRepository) {
         self.repository = repository
-        self.playerManager = manager
-        self.playbackCoordinator = manager.makeFeedPlaybackCoordinator()
-        manager.start()
     }
 
-    public func load() async {
-        guard !isLoading else { return }
+    public func load(forceRefresh: Bool = false) async {
+        guard !isLoading, forceRefresh || !hasLoaded else {
+            return
+        }
+
         isLoading = true
-        loadError = nil
+        errorMessage = nil
         defer { isLoading = false }
 
         do {
             properties = try await repository.fetchProperties()
+            hasLoaded = true
         } catch {
-            loadError = error.localizedDescription
-        }
-    }
-
-    /// Converts the backend property contract into the engine's stable feed
-    /// identity. Invalid or absent URLs are deliberately excluded from autoplay.
-    public nonisolated static func playbackItem(for property: PropertyModel) -> FeedPlaybackItem? {
-        guard let mediaID = property.id, !mediaID.isEmpty else {
-            return nil
-        }
-
-        // Match Android's HLS-first policy, then direct video, while retaining
-        // the legacy iOS videoUrl field as a backwards-compatible fallback.
-        let candidateURLs = (property.hlsUrl ?? [])
-            + (property.directVideoUrls ?? [])
-            + property.videoUrl
-        let url = candidateURLs.compactMap { rawValue -> URL? in
-            guard let candidate = URL(string: rawValue),
-                  let scheme = candidate.scheme?.lowercased(),
-                  (scheme == "https" || scheme == "http"),
-                  candidate.host != nil
-            else {
-                return nil
-            }
-            return candidate
-        }.first
-
-        guard let url else { return nil }
-
-        return FeedPlaybackItem(
-            mediaId: mediaID,
-            source: MediaSource(url: url),
-            matchScore: property.matchScore,
-            title: property.title,
-            artist: property.ownerName
-        )
-    }
-
-    public func itemBecameVisible(
-        _ property: PropertyModel,
-        previous: [PropertyModel],
-        next: [PropertyModel]
-    ) {
-        guard let current = Self.playbackItem(for: property) else {
-            // A dominant non-video card must end the previous video's autoplay.
-            Task { await playbackCoordinator.pause() }
-            return
-        }
-        playbackCoordinator.onItemVisible(
-            current,
-            previous: previous.compactMap(Self.playbackItem(for:)),
-            next: next.compactMap(Self.playbackItem(for:))
-        )
-    }
-
-    public func beginFeed() {
-        feedGeneration &+= 1
-        pinRevision &+= 1
-        composedMediaIDs.removeAll()
-        let generation = feedGeneration
-        let revision = pinRevision
-        Task { [weak self] in
-            guard let self,
-                  self.feedGeneration == generation,
-                  self.pinRevision == revision
-            else { return }
-            await self.playbackCoordinator.updateComposedMedia([])
-        }
-    }
-
-    /// Tracks only media-bearing cards that SwiftUI currently composes. The
-    /// player pool pins these identities so scrolling cannot recycle their engines.
-    public func setComposed(_ property: PropertyModel, isComposed: Bool) {
-        guard let item = Self.playbackItem(for: property) else { return }
-        if isComposed {
-            composedMediaIDs.insert(item.mediaId)
-        } else {
-            composedMediaIDs.remove(item.mediaId)
-        }
-        let snapshot = composedMediaIDs
-        let generation = feedGeneration
-        pinRevision &+= 1
-        let revision = pinRevision
-        Task { [weak self] in
-            guard let self,
-                  self.feedGeneration == generation,
-                  self.pinRevision == revision
-            else { return }
-            await self.playbackCoordinator.updateComposedMedia(snapshot)
-        }
-    }
-
-    public func playerEngine(for property: PropertyModel) async throws -> PlayerEngine {
-        guard let item = Self.playbackItem(for: property) else {
-            throw URLError(.badURL)
-        }
-        return try await playerManager.playerEngine(
-            mediaId: item.mediaId,
-            source: item.source
-        )
-    }
-
-    public func toggleMute() {
-        isMuted.toggle()
-    }
-
-    public func endFeed() {
-        feedGeneration &+= 1
-        pinRevision &+= 1
-        let generation = feedGeneration
-        let revision = pinRevision
-        composedMediaIDs.removeAll()
-        playbackCoordinator.clear()
-
-        Task { [weak self] in
-            guard let self,
-                  self.feedGeneration == generation,
-                  self.pinRevision == revision
-            else { return }
-            await self.playbackCoordinator.pause()
-            guard self.feedGeneration == generation,
-                  self.pinRevision == revision
-            else { return }
-            await self.playbackCoordinator.updateComposedMedia([])
+            errorMessage = error.localizedDescription
         }
     }
 }

@@ -5,7 +5,7 @@ let package = Package(
     name: "CoreNetwork",
     platforms: [
         .iOS(.v18),
-        .macOS(.v10_15)
+        .macOS(.v13)
     ],
     products: [
         .library(

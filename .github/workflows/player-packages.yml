@@ -1,4 +1,4 @@
-name: Swift Package Tests
+name: Player and Home Feed Package Tests
 
 on:
   push:
@@ -9,17 +9,25 @@ on:
     paths:
       - "packages/CorePlayerEngine/**"
       - "packages/CorePlayerUI/**"
-      - "packages/CoreModel/**"
-      - "packages/CoreNetwork/**"
       - "packages/FeatureHome/**"
+      - "packages/CoreAppData/**"
+      - "packages/CoreNetwork/**"
+      - "packages/CoreModel/**"
+      - "packages/CoreDesignSystem/**"
+      - "packages/CoreImagePipeline/**"
+      - "packages/CoreMediaPipeline/**"
       - ".github/workflows/player-packages.yml"
   pull_request:
     paths:
       - "packages/CorePlayerEngine/**"
       - "packages/CorePlayerUI/**"
-      - "packages/CoreModel/**"
-      - "packages/CoreNetwork/**"
       - "packages/FeatureHome/**"
+      - "packages/CoreAppData/**"
+      - "packages/CoreNetwork/**"
+      - "packages/CoreModel/**"
+      - "packages/CoreDesignSystem/**"
+      - "packages/CoreImagePipeline/**"
+      - "packages/CoreMediaPipeline/**"
       - ".github/workflows/player-packages.yml"
 
 concurrency:

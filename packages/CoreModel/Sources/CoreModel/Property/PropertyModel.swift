@@ -1,3 +1,9 @@
+//
+//  property.swift
+//  model
+//
+//  Created by builder on 5/3/25.
+//
 import Foundation
 
 public struct PropertyModel: Codable, Identifiable, Sendable {
@@ -7,7 +13,7 @@ public struct PropertyModel: Codable, Identifiable, Sendable {
     public var price: Double?
     public var imageUrl: [String]
     public var videoUrl: [String]
-    /// Backend media fields shared with Android's property feed contract.
+    /// Additional backend media fields used by the Android property feed.
     public var directVideoUrls: [String]?
     public var hlsUrl: [String]?
     public var video: Bool
@@ -33,7 +39,7 @@ public struct PropertyModel: Codable, Identifiable, Sendable {
     public var availableFrom: String?
     public var leaseTerms: String?
     public var available: Bool
-
+    
     private enum CodingKeys: String, CodingKey {
         case id, title, description, price, imageUrl, videoUrl
         case directVideoUrls, hlsUrl, video, matchScore, latitude, longitude, createdAt
@@ -76,10 +82,9 @@ public struct PropertyModel: Codable, Identifiable, Sendable {
         self.leaseTerms = nil
         self.available = false
     }
-
-    /// Decodes both the current Android backend shape and older iOS records.
-    /// Several Android fields are nullable or have server-side defaults, so
-    /// absent legacy fields must not make an otherwise valid listing disappear.
+    
+    /// Decodes the Android property-feed shape while remaining compatible with
+    /// older records that only contain the legacy iOS fields.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 

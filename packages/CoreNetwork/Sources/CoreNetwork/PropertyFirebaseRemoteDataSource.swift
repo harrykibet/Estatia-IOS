@@ -1,7 +1,11 @@
 import Foundation
 import CoreModel
+
+#if canImport(FirebaseFirestore)
 import FirebaseFirestore
 
+/// Actor isolation keeps the non-Sendable Firestore SDK handle inside one
+/// concurrency domain while satisfying PropertyRemoteDataSource's Sendable contract.
 public actor FirebasePropertyRemoteDataSource: PropertyRemoteDataSource {
     private let db: Firestore
     private let collectionName: String
@@ -95,3 +99,4 @@ public actor FirebasePropertyRemoteDataSource: PropertyRemoteDataSource {
         try await db.collection(collectionName).document(id).delete()
     }
 }
+#endif

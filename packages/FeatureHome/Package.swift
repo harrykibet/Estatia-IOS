@@ -22,21 +22,10 @@ let package = Package(
             dependencies: [
                 .product(name: "CoreAppData", package: "CoreAppData"),
                 .product(name: "CoreModel", package: "CoreModel"),
-                .product(name: "CorePlayerEngine", package: "coreplayerengine"),
-                .product(name: "CorePlayerUI", package: "coreplayerui")
+                .product(name: "CorePlayerEngine", package: "CorePlayerEngine"),
+                .product(name: "CorePlayerUI", package: "CorePlayerUI")
             ],
-            exclude: [
-                "Views/HomeRouteView.swift",
-                "Views/HomeScreenView.swift",
-                "Views/ErrorStateView.swift",
-                "Views/EmptyStateView.swift",
-                "Views/LoadingStateView.swift",
-                "Views/HomeContentPreviewView.swift",
-                "Views/HomeEmptyPreviewView.swift",
-                "Views/HomeErrorPreviewView.swift",
-                "Views/HomeLoadingPreviewView.swift",
-                "Views/HomeContentSwahiliPreviewView.swift"
-            ]
+            exclude: ["Views"]
         ),
         .testTarget(
             name: "FeatureHomeTests",

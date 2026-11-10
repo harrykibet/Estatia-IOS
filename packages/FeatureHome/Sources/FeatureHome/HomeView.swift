@@ -1,4 +1,5 @@
 import SwiftUI
+
 import CoreAppData
 import CoreModel
 import CorePlayerEngine
@@ -6,220 +7,250 @@ import CorePlayerUI
 
 public struct HomeView: View {
     @StateObject private var viewModel: HomeViewModel
+    @StateObject private var playbackController: HomeFeedPlaybackController
 
-    public init(viewModel: HomeViewModel) {
+    public init(
+        viewModel: HomeViewModel,
+        playbackController: HomeFeedPlaybackController = HomeFeedPlaybackController()
+    ) {
         self._viewModel = StateObject(wrappedValue: viewModel)
+        self._playbackController = StateObject(wrappedValue: playbackController)
     }
 
     public var body: some View {
-        NavigationView {
+        NavigationStack {
             Group {
-                if viewModel.isLoading && viewModel.properties.isEmpty {
+                if viewModel.properties.isEmpty && viewModel.isLoading {
                     ProgressView("Loading properties…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let loadError = viewModel.loadError, viewModel.properties.isEmpty {
-                    ContentUnavailableView(
-                        "Unable to load properties",
-                        systemImage: "wifi.exclamationmark",
-                        description: Text(loadError)
-                    )
+                } else if viewModel.properties.isEmpty, let error = viewModel.errorMessage {
+                    ContentUnavailableView {
+                        Label("Unable to load properties", systemImage: "wifi.exclamationmark")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("Try Again") {
+                            Task { await viewModel.load(forceRefresh: true) }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if viewModel.properties.isEmpty {
                     ContentUnavailableView(
                         "No properties yet",
                         systemImage: "house",
-                        description: Text("New listings will appear here.")
+                        description: Text("New property listings will appear here.")
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    ScrollView(.vertical) {
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(viewModel.properties.enumerated()), id: \.offset) { entry in
-                                let index = entry.offset
-                                HomePropertyFeedCard(
-                                    property: entry.element,
-                                    previous: index > 0
-                                        ? Array(viewModel.properties[..<index].suffix(1))
-                                        : [],
-                                    next: Array(viewModel.properties.dropFirst(index + 1).prefix(2)),
-                                    viewModel: viewModel
-                                )
-                                .id(
-                                    "\(entry.element.id ?? "home-\(index)")|\(HomeViewModel.playbackItem(for: entry.element)?.source.url.absoluteString ?? "no-video")"
-                                )
-                                .containerRelativeFrame(.vertical)
-                            }
-                        }
-                        .scrollTargetLayout()
-                    }
-                    .scrollTargetBehavior(.paging)
-                    .scrollIndicators(.hidden)
-                    .refreshable {
-                        await viewModel.load()
-                    }
+                    propertyFeed
                 }
             }
             .navigationTitle("Home")
-            .onAppear {
-                viewModel.beginFeed()
+#if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+#endif
+        }
+        .task {
+            playbackController.start()
+            await viewModel.load()
+        }
+        .onDisappear {
+            Task { await playbackController.stop() }
+        }
+    }
+
+    private var feedItems: [HomeFeedItem] {
+        viewModel.properties.enumerated().map { entry in
+            let propertyID = entry.element.id?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let identity: String
+            if let propertyID, !propertyID.isEmpty {
+                identity = "property:\(propertyID)"
+            } else {
+                identity = "legacy-index:\(entry.offset)"
             }
-            .task {
-                await viewModel.load()
+            return HomeFeedItem(
+                id: identity,
+                index: entry.offset,
+                property: entry.element
+            )
+        }
+    }
+
+    private var propertyFeed: some View {
+        ScrollView(.vertical) {
+            LazyVStack(spacing: 0) {
+                ForEach(feedItems) { item in
+                    HomeFeedCardView(
+                        property: item.property,
+                        engine: item.property.id.flatMap { playbackController.engines[$0] },
+                        isMuted: playbackController.isMuted,
+                        onMuteToggle: playbackController.toggleMute
+                    )
+                    .containerRelativeFrame(.vertical)
+                    .onAppear {
+                        playbackController.setComposed(true, property: item.property)
+                    }
+                    .onDisappear {
+                        playbackController.setComposed(false, property: item.property)
+                    }
+                    .onScrollVisibilityChange(threshold: 0.6) { isVisible in
+                        guard isVisible else { return }
+                        playbackController.itemBecameVisible(
+                            in: viewModel.properties,
+                            at: item.index
+                        )
+                    }
+                }
             }
-            .onDisappear {
-                viewModel.endFeed()
-            }
+            .scrollTargetLayout()
+        }
+        .scrollIndicators(.hidden)
+        .scrollTargetBehavior(.paging)
+        .refreshable {
+            await viewModel.load(forceRefresh: true)
         }
     }
 }
 
-@MainActor
-private struct HomePropertyFeedCard: View {
+private struct HomeFeedItem: Identifiable {
+    let id: String
+    let index: Int
     let property: PropertyModel
-    let previous: [PropertyModel]
-    let next: [PropertyModel]
-    @ObservedObject var viewModel: HomeViewModel
+}
 
-    @State private var isVisible = false
-    @State private var engine: (any PlayerEngine)?
-    @State private var engineLoadFailed = false
-
-    private var videoItem: FeedPlaybackItem? {
-        HomeViewModel.playbackItem(for: property)
-    }
-
-    private var firstImageURL: URL? {
-        property.imageUrl.first.flatMap { URL(string: $0) }
-    }
+private struct HomeFeedCardView: View {
+    let property: PropertyModel
+    let engine: (any PlayerEngine)?
+    let isMuted: Bool
+    let onMuteToggle: () -> Void
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            Color.black
+        GeometryReader { geometry in
+            ZStack(alignment: .bottomLeading) {
+                Color.black
 
-            if videoItem != nil {
                 if let engine {
                     EngineVideoPlayer(
                         engine: engine,
                         title: property.title,
-                        isMuted: viewModel.isMuted,
-                        onMuteToggle: viewModel.toggleMute
+                        isMuted: isMuted,
+                        onMuteToggle: onMuteToggle
                     )
-                } else if engineLoadFailed {
-                    ContentUnavailableView(
-                        "Video unavailable",
-                        systemImage: "video.slash",
-                        description: Text("This listing's video could not be prepared.")
-                    )
-                    .foregroundStyle(.white)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .id(ObjectIdentifier(engine))
                 } else {
-                    ProgressView()
-                        .tint(.white)
+                    poster
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                 }
-            } else if let firstImageURL {
-                AsyncImage(url: firstImageURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    case .failure:
-                        Image(systemName: "house")
-                            .font(.largeTitle)
-                            .foregroundStyle(.white.opacity(0.8))
-                    case .empty:
-                        ProgressView().tint(.white)
-                    @unknown default:
-                        Color.black
+
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.12), .black.opacity(0.78)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+                .allowsHitTesting(false)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(property.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled property")
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(2)
+
+                    Text([property.county, property.propertyType]
+                        .compactMap { $0?.isEmpty == false ? $0 : nil }
+                        .joined(separator: " • ")
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.85))
+
+                    if let price = property.price {
+                        Text(price.formatted(.number.precision(.fractionLength(0))))
+                            .font(.headline)
+                    }
+
+                    if let description = property.description,
+                       !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(description)
+                            .font(.subheadline)
+                            .lineLimit(3)
+                            .foregroundStyle(.white.opacity(0.9))
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-            } else {
-                Image(systemName: "house")
-                    .font(.largeTitle)
-                    .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 112)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
+        }
+        .background(Color.black)
+    }
 
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.18), .black.opacity(0.82)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
-            .allowsHitTesting(false)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(property.title ?? "Untitled property")
-                    .font(.title3.weight(.bold))
-                    .lineLimit(2)
-
-                if let county = property.county, !county.isEmpty {
-                    Text(county)
-                        .font(.subheadline)
-                }
-
-                if let price = property.price {
-                    Text(price, format: .currency(code: "KES").precision(.fractionLength(0)))
-                        .font(.headline)
-                }
-
-                if let description = property.description, !description.isEmpty {
-                    Text(description)
-                        .font(.subheadline)
-                        .lineLimit(3)
+    @ViewBuilder
+    private var poster: some View {
+        if let imageURL = property.imageUrl.lazy.compactMap(Self.validRemoteURL).first {
+            AsyncImage(url: imageURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFill()
+                case .empty, .failure:
+                    placeholder
+                @unknown default:
+                    placeholder
                 }
             }
-            .foregroundStyle(.white)
-            .padding(.leading, 20)
-            .padding(.trailing, 92)
-            .padding(.bottom, 138)
-            .allowsHitTesting(false)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.black)
-        .onScrollVisibilityChange(threshold: 0.1) { visible in
-            viewModel.setComposed(property, isComposed: visible)
-        }
-        .onScrollVisibilityChange(threshold: 0.9) { visible in
-            isVisible = visible
-            if visible {
-                viewModel.itemBecameVisible(
-                    property,
-                    previous: previous,
-                    next: next
-                )
-            }
-        }
-        .task(id: isVisible ? videoItem?.source.url.absoluteString : nil) {
-            guard isVisible, videoItem != nil else {
-                engine = nil
-                engineLoadFailed = false
-                return
-            }
-
-            do {
-                let preparedEngine = try await viewModel.playerEngine(for: property)
-                guard !Task.isCancelled else { return }
-                engine = preparedEngine
-                engineLoadFailed = false
-            } catch {
-                guard !Task.isCancelled else { return }
-                engine = nil
-                engineLoadFailed = true
-            }
-        }
-        .onDisappear {
-            if isVisible {
-                viewModel.setComposed(property, isComposed: false)
-            }
+        } else {
+            placeholder
         }
     }
+
+    private var placeholder: some View {
+        ZStack {
+            Color.gray.opacity(0.28)
+            Image(systemName: "house.fill")
+                .font(.system(size: 52, weight: .light))
+                .foregroundStyle(.white.opacity(0.6))
+        }
+    }
+
+    private static func validRemoteURL(_ value: String) -> URL? {
+        guard let url = URL(string: value),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http",
+              url.host != nil
+        else {
+            return nil
+        }
+        return url
+    }
+}
+
+// Keep preview fixtures at file scope. The #Preview macro body is a
+// PreviewMacroBodyBuilder and cannot contain local type declarations.
+private struct HomePreviewRepository: PropertyRepository {
+    func fetchProperty(id: String) async throws -> PropertyModel {
+        PropertyModel()
+    }
+
+    func fetchProperties() async throws -> [PropertyModel] {
+        [PropertyModel()]
+    }
+
+    func searchProperties(query: String?, filters: PropertySearchFilters) async throws -> [PropertyModel] {
+        [PropertyModel()]
+    }
+
+    func createProperty(_ property: PropertyModel) async throws -> PropertyModel {
+        property
+    }
+
+    func updateProperty(_ property: PropertyModel) async throws -> PropertyModel {
+        property
+    }
+
+    func deleteProperty(id: String) async throws {}
 }
 
 #Preview {
     HomeView(viewModel: HomeViewModel(repository: HomePreviewRepository()))
-}
-
-private struct HomePreviewRepository: PropertyRepository {
-    func fetchProperty(id: String) async throws -> PropertyModel { PropertyModel() }
-    func fetchProperties() async throws -> [PropertyModel] { [PropertyModel()] }
-    func searchProperties(query: String?, filters: PropertySearchFilters) async throws -> [PropertyModel] { [] }
-    func createProperty(_ property: PropertyModel) async throws -> PropertyModel { property }
-    func updateProperty(_ property: PropertyModel) async throws -> PropertyModel { property }
-    func deleteProperty(id: String) async throws {}
 }

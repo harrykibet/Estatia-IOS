@@ -70,6 +70,32 @@ public final class PlaybackOrchestrator {
         mediaId: String,
         source: MediaSource
     ) async throws {
+        try await playInternal(
+            mediaId: mediaId,
+            source: source,
+            onEngineReady: nil
+        )
+    }
+
+    public func playWithEngineReady(
+        mediaId: String,
+        source: MediaSource,
+        onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
+    ) async throws {
+        try await playInternal(
+            mediaId: mediaId,
+            source: source,
+            onEngineReady: { engine in
+                await onEngineReady(engine)
+            }
+        )
+    }
+
+    private func playInternal(
+        mediaId: String,
+        source: MediaSource,
+        onEngineReady: (@MainActor @Sendable (any PlayerEngine) async -> Void)?
+    ) async throws {
 
         playGeneration &+= 1
 
@@ -126,6 +152,12 @@ public final class PlaybackOrchestrator {
 
             activeMediaId = mediaId
             pendingMediaId = nil
+
+            // Publish the exact engine now owned by this media identity before
+            // the best-effort cache warm can delay mounting the feed surface.
+            if let onEngineReady {
+                await onEngineReady(managed.engine)
+            }
 
             await streamingPipeline.warm(
                 mediaId: mediaId,
@@ -336,6 +368,18 @@ public final class PlaybackOrchestrator {
         }
 
         return managed.engine.state
+    }
+
+    /// Returns the player engine only while the pool still assigns it to this
+    /// media identity. Feed UIs use this to render the already-managed engine
+    /// rather than constructing a second AVPlayer.
+    public func playerEngine(for mediaId: String) async -> (any PlayerEngine)? {
+        guard let managed = await pool.get(mediaId: mediaId),
+              managed.mediaId == mediaId
+        else {
+            return nil
+        }
+        return managed.engine
     }
 
     /// Observes engine events for an active or preloaded media identity.
