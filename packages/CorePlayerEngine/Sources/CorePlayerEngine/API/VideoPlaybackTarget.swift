@@ -21,6 +21,14 @@ public protocol VideoPlaybackTarget: AnyObject {
         source: MediaSource
     ) async throws
 
+    /// Starts visible playback and reports the managed engine as soon as
+    /// ownership is committed, without waiting for speculative cache warming.
+    func play(
+        mediaId: String,
+        source: MediaSource,
+        onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
+    ) async throws
+
     func preload(
         mediaId: String,
         source: MediaSource
@@ -52,6 +60,15 @@ public extension VideoPlaybackTarget {
 
     func playerEngine(for mediaId: String) async -> (any PlayerEngine)? {
         nil
+    }
+
+    func play(
+        mediaId: String,
+        source: MediaSource,
+        onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
+    ) async throws {
+        try await play(mediaId: mediaId, source: source)
+        await onEngineReady(await playerEngine(for: mediaId))
     }
 }
 
