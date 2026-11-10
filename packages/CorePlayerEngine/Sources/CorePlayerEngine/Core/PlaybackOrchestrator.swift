@@ -160,6 +160,7 @@ public final class PlaybackOrchestrator {
 
         // Invalidate pending play/recovery work before looking up the target.
         playGeneration &+= 1
+        let generation = playGeneration
 
         let mediaId = pendingMediaId ?? activeMediaId
         pendingMediaId = nil
@@ -169,6 +170,7 @@ public final class PlaybackOrchestrator {
         }
 
         guard let managed = await pool.get(mediaId: mediaId),
+              generation == playGeneration,
               managed.mediaId == mediaId
         else {
             return
