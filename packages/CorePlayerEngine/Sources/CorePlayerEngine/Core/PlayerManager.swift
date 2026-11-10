@@ -209,7 +209,9 @@ public final class PlayerManager: VideoPlaybackTarget {
                 // continues in the background of this call.
                 self?.activeMediaId = mediaId
                 self?.activeContentType = contentType
-                await onEngineReady?(engine)
+                if let engine {
+                    await onEngineReady?(engine)
+                }
             }
         )
 
