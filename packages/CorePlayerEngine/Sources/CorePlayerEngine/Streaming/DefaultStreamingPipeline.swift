@@ -95,39 +95,30 @@ public final class DefaultStreamingPipeline:
                     negotiatedSource.url.path
             ) {
 
-            let base =
-                best.baseURL
-                    .absoluteString
+            // Replace only the network authority. Keep the negotiated
+            // codec query, auth query items, fragment and original path.
+            if var resolvedComponents = URLComponents(
+                url: negotiatedSource.url,
+                resolvingAgainstBaseURL: false
+            ),
+               let cdnComponents = URLComponents(
+                url: best.baseURL,
+                resolvingAgainstBaseURL: false
+               ) {
+                resolvedComponents.scheme = cdnComponents.scheme ?? resolvedComponents.scheme
+                resolvedComponents.host = cdnComponents.host ?? resolvedComponents.host
+                resolvedComponents.port = cdnComponents.port
+                resolvedComponents.user = cdnComponents.user
+                resolvedComponents.password = cdnComponents.password
 
-            let path =
-                source.url.path
-
-            let resolvedString:
-
-                String =
-                base.hasSuffix("/")
-                ? String(
-                    base.dropLast()
-                ) + path
-                : base + path
-
-            if let resolved =
-                URL(
-                    string:
-                        resolvedString
-                ) {
-
-                networkSource =
-                    MediaSource(
-                        url:
-                            resolved,
-                        type:
-                            negotiatedSource.type,
-                        headers:
-                            negotiatedSource.headers,
-                        metadata:
-                            negotiatedSource.metadata
+                if let resolved = resolvedComponents.url {
+                    networkSource = MediaSource(
+                        url: resolved,
+                        type: negotiatedSource.type,
+                        headers: negotiatedSource.headers,
+                        metadata: negotiatedSource.metadata
                     )
+                }
             }
         }
 
