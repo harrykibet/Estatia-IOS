@@ -303,7 +303,7 @@ final class PlaybackOrchestratorTests: XCTestCase {
             streamingPipeline: streaming
         )
 
-        try await orchestrator.play(
+        try await orchestrator.playWithEngineReady(
             mediaId: "visible",
             source: makeSource("visible"),
             onEngineReady: { readyEngine in
