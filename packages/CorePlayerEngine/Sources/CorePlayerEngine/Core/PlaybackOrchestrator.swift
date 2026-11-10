@@ -70,10 +70,28 @@ public final class PlaybackOrchestrator {
         mediaId: String,
         source: MediaSource
     ) async throws {
-        try await play(mediaId: mediaId, source: source, onEngineReady: nil)
+        try await playInternal(
+            mediaId: mediaId,
+            source: source,
+            onEngineReady: nil
+        )
     }
 
-    public func play(
+    public func playWithEngineReady(
+        mediaId: String,
+        source: MediaSource,
+        onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
+    ) async throws {
+        try await playInternal(
+            mediaId: mediaId,
+            source: source,
+            onEngineReady: { engine in
+                await onEngineReady(engine)
+            }
+        )
+    }
+
+    private func playInternal(
         mediaId: String,
         source: MediaSource,
         onEngineReady: (@MainActor @Sendable (any PlayerEngine) async -> Void)?
