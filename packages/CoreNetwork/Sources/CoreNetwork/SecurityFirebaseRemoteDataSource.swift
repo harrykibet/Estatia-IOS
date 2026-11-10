@@ -1,9 +1,8 @@
 import Foundation
 import CoreModel
 
-#if canImport(FirebaseFirestore) && canImport(FirebaseFirestoreSwift)
+#if canImport(FirebaseFirestore)
 import FirebaseFirestore
-import FirebaseFirestoreSwift
 
 public final class FirebaseSecurityRemoteDataSource: SecurityRemoteDataSource {
     private let db: Firestore
