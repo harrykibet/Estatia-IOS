@@ -51,7 +51,7 @@ public final class HomeViewModel: ObservableObject {
         // the legacy iOS videoUrl field as a backwards-compatible fallback.
         let candidateURLs = (property.hlsUrl ?? [])
             + (property.directVideoUrls ?? [])
-            + (property.videoUrl ?? [])
+            + property.videoUrl
         let url = candidateURLs.compactMap { rawValue -> URL? in
             guard let candidate = URL(string: rawValue),
                   let scheme = candidate.scheme?.lowercased(),
