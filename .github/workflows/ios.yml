@@ -69,6 +69,21 @@ jobs:
           spm-${{ runner.os }}-
 
     # =========================
+    # 🧱 Xcode DerivedData Cache
+    # =========================
+    - name: Cache Xcode DerivedData
+      uses: actions/cache@v5
+      with:
+        path: |
+          build/Build
+          build/ModuleCache.noindex
+          build/SourcePackages
+        key: derived-data-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ github.event.pull_request.number || github.ref_name }}-${{ github.sha }}-${{ hashFiles('**/Package.resolved', 'estatia.xcodeproj/project.pbxproj', '**/Package.swift') }}
+        restore-keys: |
+          derived-data-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-${{ github.event.pull_request.number || github.ref_name }}-
+          derived-data-${{ runner.os }}-${{ runner.arch }}-xcode-26.6-main-
+
+    # =========================
     # 🔐 Restore Firebase configuration from GitHub Actions secret
     # =========================
     - name: Restore Firebase plist
@@ -113,7 +128,7 @@ jobs:
     # =========================
     - name: Build for testing
       run: |
-        xcodebuild clean build-for-testing \
+        xcodebuild build-for-testing \
           -project estatia.xcodeproj \
           -scheme estatia \
           -destination "platform=iOS Simulator,OS=26.2,name=iPhone 17 Pro,arch=arm64" \
