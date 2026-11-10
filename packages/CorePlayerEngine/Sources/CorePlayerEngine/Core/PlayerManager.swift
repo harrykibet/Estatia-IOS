@@ -579,6 +579,12 @@ public final class PlayerManager: VideoPlaybackTarget {
         let shouldResume = systemAllowsResume && currentIntent
 
         do {
+            // AVAudioSession must be active before the engine resumes its
+            // transport, otherwise the first playback command can be dropped.
+            if shouldResume {
+                audioSession.request()
+            }
+
             try await orchestrator.resumeFromAudioInterruption(
                 mediaId: interruption.mediaId,
                 shouldResume: shouldResume
@@ -587,7 +593,6 @@ public final class PlayerManager: VideoPlaybackTarget {
 
             if shouldResume {
                 let generation = lifecycleState.generation
-                audioSession.request()
                 await startBitrateMonitoring(
                     mediaId: interruption.mediaId,
                     contentType: activeContentType,
