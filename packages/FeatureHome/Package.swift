@@ -29,7 +29,10 @@ let package = Package(
         ),
         .testTarget(
             name: "FeatureHomeTests",
-            dependencies: ["FeatureHome"]
+            dependencies: [
+                "FeatureHome",
+                .product(name: "CoreModel", package: "CoreModel")
+            ]
         ),
     ]
 )
