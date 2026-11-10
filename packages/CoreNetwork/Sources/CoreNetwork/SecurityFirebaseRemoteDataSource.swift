@@ -4,7 +4,9 @@ import CoreModel
 #if canImport(FirebaseFirestore)
 import FirebaseFirestore
 
-public final class FirebaseSecurityRemoteDataSource: SecurityRemoteDataSource {
+/// Actor isolation keeps the non-Sendable Firestore SDK handle inside one
+/// concurrency domain while satisfying SecurityRemoteDataSource's Sendable contract.
+public actor FirebaseSecurityRemoteDataSource: SecurityRemoteDataSource {
     private let db: Firestore
     private let collectionName: String
     private let documentId: String
