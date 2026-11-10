@@ -30,7 +30,11 @@ let package = Package(
                 "Views/HomeScreenView.swift",
                 "Views/ErrorStateView.swift",
                 "Views/EmptyStateView.swift",
-                "Views/LoadingStateView.swift"
+                "Views/LoadingStateView.swift",
+                "Views/HomeContentPreviewView.swift",
+                "Views/HomeEmptyPreviewView.swift",
+                "Views/HomeErrorPreviewView.swift",
+                "Views/HomeLoadingPreviewView.swift"
             ]
         ),
         .testTarget(
