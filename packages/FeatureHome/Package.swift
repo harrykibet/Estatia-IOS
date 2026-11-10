@@ -23,8 +23,8 @@ let package = Package(
                 .product(name: "CoreDesignSystem", package: "CoreDesignSystem"),
                 .product(name: "CoreAppData", package: "CoreAppData"),
                 .product(name: "CoreModel", package: "CoreModel"),
-                .product(name: "CorePlayerEngine", package: "CorePlayerEngine"),
-                .product(name: "CorePlayerUI", package: "CorePlayerUI")
+                .product(name: "CorePlayerEngine", package: "coreplayerengine"),
+                .product(name: "CorePlayerUI", package: "coreplayerui")
             ]
         ),
         .testTarget(
