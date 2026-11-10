@@ -16,6 +16,7 @@ public final class HomeViewModel: ObservableObject {
     private let playerManager: PlayerManager
     private let playbackCoordinator: VideoPlaybackCoordinator
     private var composedMediaIDs: Set<String> = []
+    private var feedGeneration: UInt64 = 0
 
     public init(
         repository: PropertyRepository,
@@ -91,6 +92,16 @@ public final class HomeViewModel: ObservableObject {
         )
     }
 
+    public func beginFeed() {
+        feedGeneration &+= 1
+        composedMediaIDs.removeAll()
+        let generation = feedGeneration
+        Task { [weak self] in
+            guard let self, self.feedGeneration == generation else { return }
+            await self.playbackCoordinator.updateComposedMedia([])
+        }
+    }
+
     /// Tracks only media-bearing cards that SwiftUI currently composes. The
     /// player pool pins these identities so scrolling cannot recycle their engines.
     public func setComposed(_ property: PropertyModel, isComposed: Bool) {
@@ -101,7 +112,11 @@ public final class HomeViewModel: ObservableObject {
             composedMediaIDs.remove(item.mediaId)
         }
         let snapshot = composedMediaIDs
-        Task { await playbackCoordinator.updateComposedMedia(snapshot) }
+        let generation = feedGeneration
+        Task { [weak self] in
+            guard let self, self.feedGeneration == generation else { return }
+            await self.playbackCoordinator.updateComposedMedia(snapshot)
+        }
     }
 
     public func playerEngine(for property: PropertyModel) async throws -> PlayerEngine {
@@ -119,11 +134,16 @@ public final class HomeViewModel: ObservableObject {
     }
 
     public func endFeed() {
+        feedGeneration &+= 1
+        let generation = feedGeneration
         composedMediaIDs.removeAll()
-        Task { [playbackCoordinator] in
-            await playbackCoordinator.pause()
-            playbackCoordinator.clear()
-            await playbackCoordinator.updateComposedMedia([])
+        playbackCoordinator.clear()
+
+        Task { [weak self] in
+            guard let self, self.feedGeneration == generation else { return }
+            await self.playbackCoordinator.pause()
+            guard self.feedGeneration == generation else { return }
+            await self.playbackCoordinator.updateComposedMedia([])
         }
     }
 }
