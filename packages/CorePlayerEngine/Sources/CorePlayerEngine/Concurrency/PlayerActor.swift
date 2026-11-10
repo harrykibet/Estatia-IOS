@@ -410,9 +410,14 @@ actor PlayerActor {
             player.pause()
 
         case .audioInterruptionBegan:
-            guard wantsPlayback else { return }
+            // Mark the engine interrupted even when it was already paused:
+            // a play command received during the interruption must be held
+            // until AVAudioSession reports that interruption has ended.
             isAudioInterrupted = true
-            player.pause()
+            if wantsPlayback || reducer.state == .playing ||
+                reducer.state == .buffering || reducer.state == .reconnecting {
+                player.pause()
+            }
 
         case .audioInterruptionEnded(let shouldResume):
             guard isAudioInterrupted else { return }
