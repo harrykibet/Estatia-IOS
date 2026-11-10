@@ -152,7 +152,7 @@ public final class PlayerManager: VideoPlaybackTarget {
         try await play(mediaId: mediaId, source: source, title: nil, artist: nil)
     }
 
-    public func play(
+    public func playWithEngineReady(
         mediaId: String,
         source: MediaSource,
         onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
@@ -200,7 +200,7 @@ public final class PlayerManager: VideoPlaybackTarget {
         
         audioSession.request()
         
-        try await orchestrator.play(
+        try await orchestrator.playWithEngineReady(
             mediaId: mediaId,
             source: source,
             onEngineReady: { [weak self] engine in
