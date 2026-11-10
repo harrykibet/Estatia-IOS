@@ -236,10 +236,6 @@ public final class VideoPlaybackCoordinator {
         guard isCurrentVisibility(generation) else {
             throw CancellationError()
         }
-
-        guard isCurrentVisibility(generation) else {
-            throw CancellationError()
-        }
     }
 
     // MARK: - Neighbor Preloading
