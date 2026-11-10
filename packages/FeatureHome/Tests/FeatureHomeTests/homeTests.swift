@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import FeatureHome
 import CoreModel
