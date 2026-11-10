@@ -5,7 +5,7 @@ let package = Package(
     name: "FeatureHome",
     platforms: [
         .iOS(.v18),
-        .macOS(.v13)
+        .macOS(.v15)
     ],
     products: [
         .library(name: "FeatureHome", targets: ["FeatureHome"]),
