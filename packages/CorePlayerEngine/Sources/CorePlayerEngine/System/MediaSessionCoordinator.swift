@@ -60,9 +60,11 @@ final class MediaSessionCoordinator {
         currentTime: TimeInterval,
         duration: TimeInterval?
     ) {
+        let resolvedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedArtist = artist?.trimmingCharacters(in: .whitespacesAndNewlines)
         snapshot = NowPlayingSnapshot(
-            title: title,
-            artist: artist,
+            title: resolvedTitle?.isEmpty == false ? resolvedTitle : "Estatia",
+            artist: resolvedArtist?.isEmpty == false ? resolvedArtist : "Estatia",
             elapsedTime: Self.validTime(currentTime),
             duration: Self.validDuration(duration),
             playbackRate: Self.playbackRate(for: state)
