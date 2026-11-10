@@ -95,3 +95,22 @@ jobs:
       - name: Build and test package
         run: swift test --package-path packages/FeatureHome
 
+  core-network:
+    name: CoreNetwork
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Select Xcode 26.6
+        run: |
+          set -e
+          XCODE_PATH="/Applications/Xcode_26.6.app"
+          test -d "$XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
+          swift --version
+
+      - name: Build and test package
+        run: swift test --package-path packages/CoreNetwork
