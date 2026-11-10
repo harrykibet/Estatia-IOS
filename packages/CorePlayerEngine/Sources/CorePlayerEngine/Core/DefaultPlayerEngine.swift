@@ -104,6 +104,14 @@ final class DefaultPlayerEngine: PlayerEngine, AVPlayerProviding {
     func pause() async throws {
         try await actor.handle(.pause)
     }
+
+    func pauseForAudioInterruption() async {
+        try? await actor.handle(.audioInterruptionBegan)
+    }
+
+    func resumeFromAudioInterruption(shouldResume: Bool) async throws {
+        try await actor.handle(.audioInterruptionEnded(shouldResume: shouldResume))
+    }
     
     func seek(to seconds: TimeInterval) async throws {
         try await actor.handle(.seek(seconds))
