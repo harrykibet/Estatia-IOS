@@ -41,5 +41,11 @@ public protocol VideoPlaybackTarget: AnyObject {
     func pauseCurrent() async
 }
 
+public extension VideoPlaybackTarget {
+    /// Custom playback targets may opt into invalidation; the orchestrator
+    /// provides the concrete cancellation and transport-cleanup behavior.
+    func invalidatePendingPlaybackRequest() {}
+}
+
 extension PlaybackOrchestrator:
     VideoPlaybackTarget {}
