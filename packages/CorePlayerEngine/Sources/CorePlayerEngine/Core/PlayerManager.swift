@@ -1,12 +1,14 @@
 import Foundation
 @MainActor
-public final class PlayerManager {
+public final class PlayerManager: VideoPlaybackTarget {
     
     public static let shared = PlayerManager()
     
     private let pool: PlayerPool
     
     private let orchestrator: PlaybackOrchestrator
+
+    private let streamingPipeline: StreamingPipeline
     
     private let networkMonitor: NetworkConnectivityProviding
     
@@ -31,6 +33,7 @@ public final class PlayerManager {
         physicalMemoryMB: Int(ProcessInfo.processInfo.physicalMemory / (1_024 * 1_024))
     )
     public private(set) var activeMediaId: String?
+    private var hasStarted = false
     
     public init() {
         
@@ -88,6 +91,7 @@ public final class PlayerManager {
         
         self.pool = pool
         self.orchestrator = orchestrator
+        self.streamingPipeline = streamingPipeline
         self.networkMonitor = networkMonitor
         self.networkRecovery = NetworkRecoveryCoordinator(
             network: networkMonitor,
@@ -96,6 +100,8 @@ public final class PlayerManager {
     }
     
     public func start() {
+        guard !hasStarted else { return }
+        hasStarted = true
 
         poolEnvironmentMonitor.start { [weak self] environment in
             guard let self else { return }
@@ -123,6 +129,45 @@ public final class PlayerManager {
         )
     }
     
+    /// Builds a feed coordinator that shares this manager's player pool,
+    /// network recovery, audio session and disk cache.
+    public func makeFeedPlaybackCoordinator(
+        policy: VideoPlaybackPolicy = VideoPlaybackPolicy(),
+        onPlaybackReady: @escaping @MainActor @Sendable (String) async -> Void = { _ in }
+    ) -> VideoPlaybackCoordinator {
+        VideoPlaybackCoordinator(
+            playback: self,
+            streamingPipeline: streamingPipeline,
+            policy: policy,
+            onPlaybackReady: onPlaybackReady
+        )
+    }
+
+    /// VideoPlaybackTarget adapter. Route feed playback through PlayerManager
+    /// so lifecycle, audio-session and bitrate policies remain authoritative.
+    public func play(
+        mediaId: String,
+        source: MediaSource
+    ) async throws {
+        try await play(mediaId: mediaId, source: source, title: nil, artist: nil)
+    }
+
+    public func invalidatePendingPlaybackRequest() {
+        orchestrator.invalidatePendingPlaybackRequest()
+    }
+
+    public func updateComposedMedia(_ mediaIds: Set<String>) async {
+        await orchestrator.updateComposedMedia(mediaIds)
+    }
+
+    public func isMediaActive(_ mediaId: String) -> Bool {
+        orchestrator.isMediaActive(mediaId)
+    }
+
+    public func pauseCurrent() async {
+        await pause()
+    }
+
     public func play(
         mediaId: String,
         source: MediaSource,
@@ -290,6 +335,10 @@ public final class PlayerManager {
         )
     }
     
+    public func playerEngine(for mediaId: String) async -> (any PlayerEngine)? {
+        await orchestrator.playerEngine(for: mediaId)
+    }
+
     private func startBitrateMonitoring(
         mediaId: String,
         contentType: PlaybackContentType,
