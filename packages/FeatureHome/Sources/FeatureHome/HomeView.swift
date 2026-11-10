@@ -78,7 +78,7 @@ private struct HomePropertyFeedCard: View {
     }
 
     private var firstImageURL: URL? {
-        property.imageUrl.first.flatMap(URL.init(string:))
+        property.imageUrl.first.flatMap { URL(string: $0) }
     }
 
     var body: some View {
@@ -154,9 +154,11 @@ private struct HomePropertyFeedCard: View {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
         }
-        .onScrollVisibilityChange(threshold: 0.6) { visible in
-            isVisible = visible
+        .onScrollVisibilityChange(threshold: 0.1) { visible in
             viewModel.setComposed(property, isComposed: visible)
+        }
+        .onScrollVisibilityChange(threshold: 0.9) { visible in
+            isVisible = visible
             if visible {
                 viewModel.itemBecameVisible(
                     property,
