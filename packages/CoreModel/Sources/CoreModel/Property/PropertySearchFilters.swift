@@ -1,6 +1,6 @@
 import Foundation
 
-public struct PropertySearchFilters: Codable, Equatable {
+public struct PropertySearchFilters: Codable, Equatable, Sendable {
     public var minPrice: Double?
     public var maxPrice: Double?
     public var bedrooms: Int?
