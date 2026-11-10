@@ -39,8 +39,18 @@ public struct StreamCodecCapabilities: Sendable, Equatable {
     /// Conservatively advertises only codecs VideoToolbox confirms can be
     /// hardware-decoded by the current system.
     public static var currentSystem: StreamCodecCapabilities {
-        StreamCodecCapabilities(
-            supportsAV1: VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1),
+        // AV1 hardware decoding is available only on newer Apple OS versions.
+        // Keep the package's macOS 13 deployment target safe by treating it
+        // as unsupported there rather than invoking a newer codec constant.
+        let supportsAV1: Bool
+        if #available(iOS 17.0, macOS 14.0, *) {
+            supportsAV1 = VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1)
+        } else {
+            supportsAV1 = false
+        }
+
+        return StreamCodecCapabilities(
+            supportsAV1: supportsAV1,
             supportsHEVC: VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC),
             supportsDolbyVision: VTIsHardwareDecodeSupported(kCMVideoCodecType_DolbyVisionHEVC)
         )
