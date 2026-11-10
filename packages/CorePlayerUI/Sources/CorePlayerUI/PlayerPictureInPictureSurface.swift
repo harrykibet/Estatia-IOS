@@ -133,8 +133,9 @@ private final class PlayerPictureInPictureRegistry {
     }
 
     func release() {
-        controller?.delegate = nil
-        controller?.player = nil
+        // Do not clear the player here: the same controller may still be the
+        // live inline presentation after PiP stops. SwiftUI dismantling handles
+        // detachment when the representable itself is actually removed.
         controller = nil
         coordinator = nil
     }
