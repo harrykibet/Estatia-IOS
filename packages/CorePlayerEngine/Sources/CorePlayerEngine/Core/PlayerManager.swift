@@ -349,6 +349,13 @@ public final class PlayerManager: VideoPlaybackTarget {
             return
         }
 
+        // PiP playback never stopped in the background, so foregrounding must
+        // not enqueue a redundant play command against the same managed engine.
+        if isPictureInPictureActive {
+            lifecycleState.finishForegroundResume(generation: transition.generation)
+            return
+        }
+
         do {
             try await orchestrator.resumeCurrent()
 
