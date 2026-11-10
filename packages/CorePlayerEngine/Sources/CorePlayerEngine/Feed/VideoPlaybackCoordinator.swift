@@ -289,9 +289,8 @@ public final class VideoPlaybackCoordinator {
     ) async {
 
         guard isCurrentVisibility(generation),
-              markWarmed(
-            item.mediaId
-        ) else {
+              markWarmed(item.mediaId)
+        else {
             return
         }
 
