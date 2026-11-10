@@ -21,8 +21,10 @@ public final class HomeFeedPlaybackController: ObservableObject {
                 guard let self,
                       !self.isStopped,
                       self.selectedMediaID == mediaId,
+                      self.composedMediaIDs.contains(mediaId),
                       let engine = await self.playerManager.playerEngine(for: mediaId),
                       self.selectedMediaID == mediaId,
+                      self.composedMediaIDs.contains(mediaId),
                       self.playerManager.isMediaActive(mediaId)
                 else {
                     return
