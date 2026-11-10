@@ -89,6 +89,13 @@ public final class HomeFeedPlaybackController: ObservableObject {
 
         selectedMediaID = current.mediaId
 
+        // Visibility can be reported in the same render pass as onAppear.
+        // Pin synchronously here as well so a fast player-ready callback can
+        // never be rejected merely because the composition callback lagged.
+        if !composedMediaIDs.contains(current.mediaId) {
+            setComposed(true, property: properties[index])
+        }
+
         let previous = Array(
             properties[..<index]
                 .reversed()
