@@ -2,7 +2,7 @@ import Foundation
 import CoreModel
 import FirebaseFirestore
 
-public final class FirebasePropertyRemoteDataSource: PropertyRemoteDataSource {
+public actor FirebasePropertyRemoteDataSource: PropertyRemoteDataSource {
     private let db: Firestore
     private let collectionName: String
 
