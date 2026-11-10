@@ -120,8 +120,9 @@ public final class AppDIContainer {
     ) -> AnyView {
         switch destination {
         case .home:
-            // Wire MVVM for Home: create a property repository and inject into the HomeViewModel
-            let propertyRemote: PropertyRemoteDataSource = NoopPropertyRemoteDataSource()
+            // The Home feed reads live property documents from the configured
+            // Firestore collection instead of the empty development no-op source.
+            let propertyRemote: PropertyRemoteDataSource = FirebasePropertyRemoteDataSource()
             let propertyRepo = RemotePropertyRepository(remote: propertyRemote)
             let homeVM = FeatureHome.HomeViewModel(repository: propertyRepo)
             return AnyView(FeatureHome.HomeView(viewModel: homeVM))

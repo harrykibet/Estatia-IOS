@@ -190,6 +190,29 @@ final class PlaybackOrchestratorTests: XCTestCase {
         ) async {}
     }
 
+    @MainActor
+    final class EngineHandoffRecorder {
+        var engine: (any PlayerEngine)?
+    }
+
+    @MainActor
+    final class RecordingStreamingPipeline: StreamingPipeline {
+        let recorder: EngineHandoffRecorder
+        private(set) var engineWasReadyBeforeWarm = false
+
+        init(recorder: EngineHandoffRecorder) {
+            self.recorder = recorder
+        }
+
+        func warm(
+            mediaId: String,
+            source: MediaSource,
+            priority: WarmPriority
+        ) async {
+            engineWasReadyBeforeWarm = recorder.engine != nil
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeSource(_ mediaId: String) -> MediaSource {
@@ -249,6 +272,49 @@ final class PlaybackOrchestratorTests: XCTestCase {
             file: file,
             line: line
         )
+    }
+
+    func testPlayerEngineLookupReturnsOnlyTheManagedMediaIdentity() async throws {
+        let (orchestrator, _, enginesProvider) = makeOrchestrator()
+
+        try await orchestrator.play(
+            mediaId: "visible",
+            source: makeSource("visible")
+        )
+
+        let engine = await orchestrator.playerEngine(for: "visible")
+        let managedEngine = try XCTUnwrap(engine)
+        XCTAssertTrue(managedEngine === enginesProvider()[0])
+
+        let missingEngine = await orchestrator.playerEngine(for: "missing")
+        XCTAssertNil(missingEngine)
+    }
+
+    func testEngineReadyCallbackRunsBeforeVisibleCacheWarmCompletes() async throws {
+        let recorder = EngineHandoffRecorder()
+        let streaming = RecordingStreamingPipeline(recorder: recorder)
+        let engine = FakePlayerEngine()
+        let pool = PlayerPool(
+            configuration: PlayerPoolConfiguration(maxPlayers: 2, maxIdlePlayers: 1),
+            factory: { engine }
+        )
+        let orchestrator = PlaybackOrchestrator(
+            pool: pool,
+            streamingPipeline: streaming
+        )
+
+        try await orchestrator.playWithEngineReady(
+            mediaId: "visible",
+            source: makeSource("visible"),
+            onEngineReady: { readyEngine in
+                recorder.engine = readyEngine
+            }
+        )
+
+        let handedOffEngine = try XCTUnwrap(recorder.engine)
+        XCTAssertTrue(handedOffEngine === engine)
+        XCTAssertTrue(streaming.engineWasReadyBeforeWarm)
+        XCTAssertEqual(orchestrator.activeMediaId, "visible")
     }
 
     // MARK: - Per-Player Command Ordering
