@@ -16,6 +16,8 @@ on:
     paths:
       - "packages/CorePlayerEngine/**"
       - "packages/CorePlayerUI/**"
+      - "packages/CoreModel/**"
+      - "packages/FeatureHome/**"
       - ".github/workflows/player-packages.yml"
 
 concurrency:
