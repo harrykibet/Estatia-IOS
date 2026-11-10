@@ -448,4 +448,44 @@ final class PlayerActorTests: XCTestCase {
         try await actor.handle(.release)
     }
 
+    func testPlayRequestedDuringAudioInterruptionIsDeferredUntilItEnds() async throws {
+        let transport = FakePlayerTransport()
+        let stateEmitter = PlayerEventEmitter<PlayerState>()
+        let actor = PlayerActor(
+            config: PlayerConfiguration(),
+            player: transport,
+            watchdog: PlaybackWatchdog(),
+            stateEmitter: stateEmitter,
+            eventEmitter: PlayerEventEmitter<PlayerEvent>()
+        )
+        var states = stateEmitter.stream.makeAsyncIterator()
+        let source = MediaSource(
+            url: URL(string: "https://example.com/interruption-deferred-play.mp4")!
+        )
+
+        try await actor.handle(.load(source))
+        _ = await states.next()
+        transport.emitReady()
+        let readyState = await states.next()
+        XCTAssertEqual(readyState, .ready)
+
+        try await actor.handle(.audioInterruptionBegan)
+        try await actor.handle(.play)
+        XCTAssertEqual(
+            transport.playCount,
+            0,
+            "A play request must not reach AVPlayer while the audio session is interrupted."
+        )
+        let requestedPlaybackIntent = await actor.shouldResumeAfterInterruption
+        XCTAssertTrue(requestedPlaybackIntent)
+
+        try await actor.handle(.audioInterruptionEnded(shouldResume: true))
+        XCTAssertEqual(transport.playCount, 1)
+
+        transport.emitTransportStatus(.playing)
+        let playingState = await states.next()
+        XCTAssertEqual(playingState, .playing)
+        try await actor.handle(.release)
+    }
+
 }
