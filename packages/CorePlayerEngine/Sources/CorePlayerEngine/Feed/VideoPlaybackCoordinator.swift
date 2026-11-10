@@ -114,6 +114,7 @@ public final class VideoPlaybackCoordinator {
             visibilityGeneration
 
         cancelPendingWork()
+        playback.invalidatePendingPlaybackRequest()
 
         updateFlingState()
 
@@ -188,15 +189,14 @@ public final class VideoPlaybackCoordinator {
                 return
             }
 
-            guard generation ==
-                    self.visibilityGeneration
-            else {
+            guard self.isCurrentVisibility(generation) else {
                 return
             }
 
             await self.preloadNeighbors(
                 previous: previous,
-                next: next
+                next: next,
+                generation: generation
             )
         }
     }
@@ -208,9 +208,7 @@ public final class VideoPlaybackCoordinator {
         generation: UInt64
     ) async throws {
 
-        guard generation ==
-                visibilityGeneration
-        else {
+        guard isCurrentVisibility(generation) else {
             throw CancellationError()
         }
 
@@ -219,9 +217,7 @@ public final class VideoPlaybackCoordinator {
             source: item.source
         )
 
-        guard generation ==
-                visibilityGeneration
-        else {
+        guard isCurrentVisibility(generation) else {
             throw CancellationError()
         }
     }
@@ -230,7 +226,8 @@ public final class VideoPlaybackCoordinator {
 
     private func preloadNeighbors(
         previous: [FeedPlaybackItem],
-        next: [FeedPlaybackItem]
+        next: [FeedPlaybackItem],
+        generation: UInt64
     ) async {
 
         // N-1
@@ -238,10 +235,13 @@ public final class VideoPlaybackCoordinator {
            previous.matchScore >=
             policy.previousMinimumMatchScore {
 
+            guard isCurrentVisibility(generation) else { return }
             await warm(
                 previous,
-                priority: .previous
+                priority: .previous,
+                generation: generation
             )
+            guard isCurrentVisibility(generation) else { return }
         }
 
         // N+1
@@ -250,16 +250,20 @@ public final class VideoPlaybackCoordinator {
             if next.matchScore >=
                 policy.nextPreloadMinimumMatchScore {
 
+                guard isCurrentVisibility(generation) else { return }
                 await playback.preload(
                     mediaId: next.mediaId,
                     source: next.source
                 )
+                guard isCurrentVisibility(generation) else { return }
             }
 
             await warm(
                 next,
-                priority: .next
+                priority: .next,
+                generation: generation
             )
+            guard isCurrentVisibility(generation) else { return }
         }
 
         // N+2
@@ -267,9 +271,11 @@ public final class VideoPlaybackCoordinator {
            speculative.matchScore >=
             policy.speculativeMinimumMatchScore {
 
+            guard isCurrentVisibility(generation) else { return }
             await warm(
                 speculative,
-                priority: .speculative
+                priority: .speculative,
+                generation: generation
             )
         }
     }
@@ -278,10 +284,12 @@ public final class VideoPlaybackCoordinator {
 
     private func warm(
         _ item: FeedPlaybackItem,
-        priority: WarmPriority
+        priority: WarmPriority,
+        generation: UInt64
     ) async {
 
-        guard markWarmed(
+        guard isCurrentVisibility(generation),
+              markWarmed(
             item.mediaId
         ) else {
             return
@@ -378,8 +386,8 @@ public final class VideoPlaybackCoordinator {
     ) async throws {
 
         visibilityGeneration &+= 1
-
-        playTask?.cancel()
+        cancelPendingWork()
+        playback.invalidatePendingPlaybackRequest()
 
         try await playback.play(
             mediaId: item.mediaId,
@@ -405,6 +413,7 @@ public final class VideoPlaybackCoordinator {
         visibilityGeneration &+= 1
 
         cancelPendingWork()
+        playback.invalidatePendingPlaybackRequest()
 
         warmedMedia.removeAll(
             keepingCapacity: true
@@ -415,6 +424,10 @@ public final class VideoPlaybackCoordinator {
     }
 
     // MARK: - Internal
+
+    private func isCurrentVisibility(_ generation: UInt64) -> Bool {
+        generation == visibilityGeneration && !Task.isCancelled
+    }
 
     private func cancelPendingWork() {
 
