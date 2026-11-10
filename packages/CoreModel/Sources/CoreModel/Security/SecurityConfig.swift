@@ -8,7 +8,7 @@
 
 import Foundation
 
-public struct SecurityConfig: Codable, Equatable {
+public struct SecurityConfig: Codable, Equatable, Sendable {
     public var encryptionAlgorithm: String
     public var keyAlias: String
 
