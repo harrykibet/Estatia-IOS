@@ -1,4 +1,8 @@
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
+
 @MainActor
 public final class PlayerManager: VideoPlaybackTarget {
     
@@ -117,6 +121,19 @@ public final class PlayerManager: VideoPlaybackTarget {
     /// the engine's observed playing state are both true.
     public func setPictureInPictureActive(_ isActive: Bool) {
         isPictureInPictureActive = isActive
+
+#if canImport(UIKit)
+        // Closing PiP while the app is still backgrounded ends the user's
+        // explicit request to keep video running. When PiP stops because the
+        // app is returning to the foreground, retain normal inline playback.
+        if !isActive,
+           UIApplication.shared.applicationState == .background,
+           activeMediaId != nil {
+            Task { @MainActor [weak self] in
+                await self?.pause()
+            }
+        }
+#endif
     }
 
     public func start() {
