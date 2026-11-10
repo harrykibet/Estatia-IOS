@@ -66,7 +66,11 @@ public final class HomeViewModel: ObservableObject {
         previous: [PropertyModel],
         next: [PropertyModel]
     ) {
-        guard let current = Self.playbackItem(for: property) else { return }
+        guard let current = Self.playbackItem(for: property) else {
+            // A dominant non-video card must end the previous video's autoplay.
+            Task { await playbackCoordinator.pause() }
+            return
+        }
         playbackCoordinator.onItemVisible(
             current,
             previous: previous.compactMap(Self.playbackItem(for:)),
