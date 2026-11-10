@@ -23,6 +23,9 @@ public final class PlayerManager {
     private var latestBitrateProgress: PlaybackProgress?
     private var bitrateMonitoringGeneration: UInt64 = 0
     private var lowBandwidthDetector = SustainedLowBandwidthDetector()
+    private var activeContentType: PlaybackContentType = .onDemand
+    private var lifecycleState = PlaybackLifecycleState()
+    private var backgroundTransitionTask: Task<Void, Never>?
     public private(set) var isSustainedLowBandwidth = false
     private var poolEnvironment = PlayerPoolEnvironment(
         physicalMemoryMB: Int(ProcessInfo.processInfo.physicalMemory / (1_024 * 1_024))
@@ -108,14 +111,14 @@ public final class PlayerManager {
         
         environmentManager.start(
             onAppBackgrounded: { [weak self] in
-                Task {
-                    await self?.pause()
+                Task { @MainActor [weak self] in
+                    self?.beginAppBackgroundTransition()
                 }
             },
             onAppForegrounded: { [weak self] in
-                // Recovery coordinator handles transport recovery.
-                // Do not automatically resume user-paused media.
-                _ = self
+                Task { @MainActor [weak self] in
+                    await self?.handleAppForegrounded()
+                }
             }
         )
     }
@@ -128,6 +131,8 @@ public final class PlayerManager {
         contentType: PlaybackContentType = .onDemand
     ) async throws {
         
+        // A new explicit play request supersedes any pending lifecycle resume.
+        let lifecycleGeneration = lifecycleState.invalidateForExplicitCommand()
         mediaSessionProvider.configureNowPlaying(
             title: title,
             artist: artist
@@ -140,15 +145,113 @@ public final class PlayerManager {
             source: source
         )
 
+        guard lifecycleState.isCurrent(lifecycleGeneration) else {
+            throw CancellationError()
+        }
+
         activeMediaId = orchestrator.activeMediaId
         guard activeMediaId == mediaId else { return }
+        activeContentType = contentType
         await startBitrateMonitoring(
             mediaId: mediaId,
-            contentType: contentType
+            contentType: contentType,
+            lifecycleGeneration: lifecycleGeneration
         )
     }
     
     public func pause() async {
+        let lifecycleGeneration = lifecycleState.invalidateForExplicitCommand()
+        await pausePlayback(lifecycleGeneration: lifecycleGeneration)
+    }
+
+    /// Starts and retains the background operation so foreground recovery
+    /// cannot race a still-suspended pause command.
+    private func beginAppBackgroundTransition() {
+        guard !lifecycleState.isBackgrounded else { return }
+
+        let generation = lifecycleState.beginBackgroundTransition()
+        let mediaId = activeMediaId
+
+        backgroundTransitionTask = Task { @MainActor [weak self] in
+            await self?.handleAppBackgrounded(
+                generation: generation,
+                mediaId: mediaId
+            )
+        }
+    }
+
+    private func handleAppBackgrounded(
+        generation: UInt64,
+        mediaId: String?
+    ) async {
+        let wasPlaying = await orchestrator.isCurrentlyPlaying()
+
+        guard lifecycleState.recordBackgroundPlayback(
+                wasPlaying: wasPlaying,
+                generation: generation
+              ),
+              activeMediaId == mediaId
+        else {
+            return
+        }
+
+        await pausePlayback(lifecycleGeneration: generation)
+    }
+
+    private func handleAppForegrounded() async {
+        // The background operation includes an asynchronous playback snapshot
+        // and pause. Await it before attempting resume to preserve command order.
+        if let backgroundTransitionTask {
+            await backgroundTransitionTask.value
+            if !lifecycleState.isBackgrounded {
+                self.backgroundTransitionTask = nil
+            }
+        }
+
+        let transition = lifecycleState.beginForegroundTransition()
+        guard transition.shouldResume,
+              let mediaId = activeMediaId
+        else {
+            return
+        }
+
+        do {
+            try await orchestrator.resumeCurrent()
+
+            guard lifecycleState.isCurrent(transition.generation),
+                  activeMediaId == mediaId
+            else {
+                return
+            }
+
+            audioSession.request()
+            await startBitrateMonitoring(
+                mediaId: mediaId,
+                contentType: activeContentType,
+                lifecycleGeneration: transition.generation
+            )
+            lifecycleState.finishForegroundResume(
+                generation: transition.generation
+            )
+        } catch {
+            // A newer explicit pause/play command owns the audio session now.
+            // Never let this stale continuation abandon that newer session.
+            guard lifecycleState.isCurrent(transition.generation),
+                  activeMediaId == mediaId
+            else {
+                return
+            }
+
+            audioSession.abandon()
+            lifecycleState.finishForegroundResume(
+                generation: transition.generation
+            )
+        }
+    }
+
+    private func pausePlayback(
+        lifecycleGeneration: UInt64
+    ) async {
 
         bitrateMonitoringGeneration &+= 1
         bitrateTask?.cancel()
@@ -160,7 +263,10 @@ public final class PlayerManager {
         monitoredBitrateContentType = nil
         latestBitrateProgress = nil
         await orchestrator.pauseCurrent()
-        
+
+        // A newer play, pause, or foreground transition may have claimed the
+        // audio session while the transport pause was suspended.
+        guard lifecycleState.isCurrent(lifecycleGeneration) else { return }
         audioSession.abandon()
     }
     
@@ -186,12 +292,17 @@ public final class PlayerManager {
     
     private func startBitrateMonitoring(
         mediaId: String,
-        contentType: PlaybackContentType
+        contentType: PlaybackContentType,
+        lifecycleGeneration: UInt64
     ) async {
         bitrateMonitoringGeneration &+= 1
         let generation = bitrateMonitoringGeneration
 
-        guard activeMediaId == mediaId else { return }
+        guard lifecycleState.isCurrent(lifecycleGeneration),
+              activeMediaId == mediaId
+        else {
+            return
+        }
 
         _ = lowBandwidthDetector.reset()
         isSustainedLowBandwidth = false
@@ -209,9 +320,11 @@ public final class PlayerManager {
 
         guard let events = await orchestrator.observeEvents(mediaId: mediaId),
               generation == bitrateMonitoringGeneration,
+              lifecycleState.isCurrent(lifecycleGeneration),
               activeMediaId == mediaId,
               let provider = await orchestrator.avPlayerProvider(mediaId: mediaId),
               generation == bitrateMonitoringGeneration,
+              lifecycleState.isCurrent(lifecycleGeneration),
               activeMediaId == mediaId
         else {
             return
@@ -225,11 +338,19 @@ public final class PlayerManager {
             isSustained: false
         )
 
+        guard generation == bitrateMonitoringGeneration,
+              lifecycleState.isCurrent(lifecycleGeneration),
+              activeMediaId == mediaId
+        else {
+            return
+        }
+
         bitrateTask = Task { @MainActor [weak self] in
             for await event in events {
                 guard !Task.isCancelled,
                       let self,
                       self.bitrateMonitoringGeneration == generation,
+                      self.lifecycleState.isCurrent(lifecycleGeneration),
                       self.activeMediaId == mediaId
                 else {
                     return
@@ -303,6 +424,10 @@ public final class PlayerManager {
     }
 
     public func shutdown() async {
+
+        _ = lifecycleState.invalidateForExplicitCommand()
+        backgroundTransitionTask?.cancel()
+        backgroundTransitionTask = nil
 
         if let activeMediaId {
             await orchestrator.notifySustainedLowBandwidth(
