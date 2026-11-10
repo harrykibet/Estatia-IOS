@@ -43,7 +43,7 @@ public final class VideoPlaybackCoordinator {
     /// Invoked after the debounced visible item has successfully acquired
     /// playback ownership. Hosts can then bind their native player surface.
     private let onPlaybackReady:
-        @MainActor @Sendable (String) async -> Void
+        @MainActor @Sendable (String, (any PlayerEngine)?) async -> Void
 
     // MARK: - Tasks
 
@@ -87,7 +87,7 @@ public final class VideoPlaybackCoordinator {
         now: @escaping @Sendable () -> ContinuousClock.Instant = {
             ContinuousClock.now
         },
-        onPlaybackReady: @escaping @MainActor @Sendable (String) async -> Void = { _ in }
+        onPlaybackReady: @escaping @MainActor @Sendable (String, (any PlayerEngine)?) async -> Void = { _, _ in }
     ) {
         self.playback = playback
         self.streamingPipeline = streamingPipeline
@@ -221,14 +221,21 @@ public final class VideoPlaybackCoordinator {
 
         try await playback.play(
             mediaId: item.mediaId,
-            source: item.source
+            source: item.source,
+            onEngineReady: { [weak self] engine in
+                guard let self,
+                      self.isCurrentVisibility(generation)
+                else {
+                    return
+                }
+
+                await self.onPlaybackReady(item.mediaId, engine)
+            }
         )
 
         guard isCurrentVisibility(generation) else {
             throw CancellationError()
         }
-
-        await onPlaybackReady(item.mediaId)
 
         guard isCurrentVisibility(generation) else {
             throw CancellationError()
