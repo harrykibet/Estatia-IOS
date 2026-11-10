@@ -219,7 +219,7 @@ public final class VideoPlaybackCoordinator {
             throw CancellationError()
         }
 
-        try await playback.play(
+        try await playback.playWithEngineReady(
             mediaId: item.mediaId,
             source: item.source,
             onEngineReady: { [weak self] engine in
