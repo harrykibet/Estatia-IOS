@@ -128,7 +128,7 @@ actor StubAPIClient: APIClient {
         self.responseData = responseData
     }
 
-    func recordedRequest() -> RecordedRequest? {
+    fileprivate func recordedRequest() -> RecordedRequest? {
         request
     }
 
