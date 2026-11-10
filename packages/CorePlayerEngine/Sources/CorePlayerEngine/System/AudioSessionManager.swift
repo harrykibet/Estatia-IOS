@@ -38,8 +38,15 @@ final class AudioSessionManager {
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] notification in
+            // Notification is not Sendable. Read its primitive payload on the
+            // observer callback before entering the main-actor-isolated code.
+            let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
             MainActor.assumeIsolated {
-                self?.handleInterruption(notification)
+                self?.handleInterruption(
+                    typeRawValue: rawType,
+                    optionsRawValue: rawOptions
+                )
             }
         }
 
@@ -48,8 +55,10 @@ final class AudioSessionManager {
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] notification in
+            // Only transfer the Sendable raw reason across the actor boundary.
+            let rawReason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
             MainActor.assumeIsolated {
-                self?.handleRouteChange(notification)
+                self?.handleRouteChange(reasonRawValue: rawReason)
             }
         }
         #endif
@@ -100,9 +109,12 @@ final class AudioSessionManager {
     }
 
     #if canImport(AVFoundation) && os(iOS)
-    private func handleInterruption(_ notification: Notification) {
-        guard let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-              let type = AVAudioSession.InterruptionType(rawValue: rawType)
+    private func handleInterruption(
+        typeRawValue: UInt?,
+        optionsRawValue: UInt
+    ) {
+        guard let typeRawValue,
+              let type = AVAudioSession.InterruptionType(rawValue: typeRawValue)
         else {
             return
         }
@@ -111,17 +123,16 @@ final class AudioSessionManager {
         case .began:
             onInterruptionBegan?()
         case .ended:
-            let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
-            let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsRawValue)
             onInterruptionEnded?(options.contains(.shouldResume))
         @unknown default:
             break
         }
     }
 
-    private func handleRouteChange(_ notification: Notification) {
-        guard let rawReason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
-              let reason = AVAudioSession.RouteChangeReason(rawValue: rawReason)
+    private func handleRouteChange(reasonRawValue: UInt?) {
+        guard let reasonRawValue,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonRawValue)
         else {
             return
         }
