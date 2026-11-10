@@ -70,6 +70,14 @@ public final class PlaybackOrchestrator {
         mediaId: String,
         source: MediaSource
     ) async throws {
+        try await play(mediaId: mediaId, source: source, onEngineReady: nil)
+    }
+
+    public func play(
+        mediaId: String,
+        source: MediaSource,
+        onEngineReady: (@MainActor @Sendable (any PlayerEngine) async -> Void)?
+    ) async throws {
 
         playGeneration &+= 1
 
@@ -126,6 +134,12 @@ public final class PlaybackOrchestrator {
 
             activeMediaId = mediaId
             pendingMediaId = nil
+
+            // Publish the exact engine now owned by this media identity before
+            // the best-effort cache warm can delay mounting the feed surface.
+            if let onEngineReady {
+                await onEngineReady(managed.engine)
+            }
 
             await streamingPipeline.warm(
                 mediaId: mediaId,
