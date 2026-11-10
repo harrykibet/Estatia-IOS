@@ -57,3 +57,27 @@ import CoreModel
 
     #expect(item?.source.url.absoluteString == "https://cdn.example.test/direct.mp4")
 }
+
+@Test func decodesAndroidPropertyVideoFieldsWithoutLegacyVideoURL() async throws {
+    let json = Data("""
+    {
+      "id": "android-property-46",
+      "title": "Android listing",
+      "imageUrl": [],
+      "directVideoUrls": ["https://cdn.example.test/direct.mp4"],
+      "hlsUrl": ["https://cdn.example.test/android-stream.m3u8"],
+      "video": true,
+      "createdAt": 1730000000000,
+      "active": true,
+      "available": true
+    }
+    """.utf8)
+
+    let property = try JSONDecoder().decode(PropertyModel.self, from: json)
+    let item = HomeViewModel.playbackItem(for: property)
+
+    #expect(property.videoUrl.isEmpty)
+    #expect(item?.mediaId == "android-property-46")
+    #expect(item?.source.url.absoluteString == "https://cdn.example.test/android-stream.m3u8")
+    #expect(property.createdAt != nil)
+}
