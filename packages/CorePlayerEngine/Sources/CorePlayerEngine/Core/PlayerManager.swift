@@ -554,9 +554,7 @@ public final class PlayerManager: VideoPlaybackTarget {
         )
 
         stopBitrateMonitoring()
-        if shouldResume {
-            await orchestrator.pauseForAudioInterruption(mediaId: mediaId)
-        }
+        await orchestrator.pauseForAudioInterruption(mediaId: mediaId)
     }
 
     private func suspendNewPlaybackDuringAudioInterruption(
