@@ -203,7 +203,14 @@ public final class PlayerManager: VideoPlaybackTarget {
         try await orchestrator.play(
             mediaId: mediaId,
             source: source,
-            onEngineReady: onEngineReady
+            onEngineReady: { [weak self] engine in
+                // Publish manager ownership alongside orchestrator ownership so
+                // lifecycle transitions can see playback even while cache warm
+                // continues in the background of this call.
+                self?.activeMediaId = mediaId
+                self?.activeContentType = contentType
+                await onEngineReady?(engine)
+            }
         )
 
         guard lifecycleState.isCurrent(lifecycleGeneration) else {
