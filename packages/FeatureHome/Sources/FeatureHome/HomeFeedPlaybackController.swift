@@ -17,12 +17,10 @@ public final class HomeFeedPlaybackController: ObservableObject {
 
     private lazy var coordinator: VideoPlaybackCoordinator = {
         playerManager.makeFeedPlaybackCoordinator(
-            onPlaybackReady: { [weak self] mediaId in
+            onPlaybackReady: { [weak self] mediaId, engine in
                 guard let self,
+                      let engine,
                       !self.isStopped,
-                      self.selectedMediaID == mediaId,
-                      self.composedMediaIDs.contains(mediaId),
-                      let engine = await self.playerManager.playerEngine(for: mediaId),
                       self.selectedMediaID == mediaId,
                       self.composedMediaIDs.contains(mediaId),
                       self.playerManager.isMediaActive(mediaId)
