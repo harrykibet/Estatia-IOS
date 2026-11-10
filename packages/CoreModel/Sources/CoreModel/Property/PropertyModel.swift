@@ -11,6 +11,7 @@ public struct PropertyModel: Codable, Identifiable {
     public var directVideoUrls: [String]?
     public var hlsUrl: [String]?
     public var video: Bool
+    public var matchScore: Double
     public var latitude: Double?
     public var longitude: Double?
     public var createdAt: Date?
@@ -35,7 +36,7 @@ public struct PropertyModel: Codable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, title, description, price, imageUrl, videoUrl
-        case directVideoUrls, hlsUrl, video, latitude, longitude, createdAt
+        case directVideoUrls, hlsUrl, video, matchScore, latitude, longitude, createdAt
         case ownerId, ownerName, contactPhone, contactEmail, county, active
         case viewsCount, propertyType, bedrooms, bathrooms, areaSize
         case amenities, features, depositAmount, address, availableFrom
@@ -52,6 +53,7 @@ public struct PropertyModel: Codable, Identifiable {
         self.directVideoUrls = nil
         self.hlsUrl = nil
         self.video = false
+        self.matchScore = 0.5
         self.latitude = nil
         self.longitude = nil
         self.createdAt = nil
@@ -90,6 +92,7 @@ public struct PropertyModel: Codable, Identifiable {
         directVideoUrls = try container.decodeIfPresent([String].self, forKey: .directVideoUrls)
         hlsUrl = try container.decodeIfPresent([String].self, forKey: .hlsUrl)
         video = try container.decodeIfPresent(Bool.self, forKey: .video) ?? false
+        matchScore = try container.decodeIfPresent(Double.self, forKey: .matchScore) ?? 0.5
         latitude = try container.decodeIfPresent(Double.self, forKey: .latitude)
         longitude = try container.decodeIfPresent(Double.self, forKey: .longitude)
 
