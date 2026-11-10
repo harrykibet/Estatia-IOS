@@ -1,11 +1,8 @@
 import Foundation
 import CoreModel
-
-#if canImport(FirebaseFirestore) && canImport(FirebaseFirestoreSwift)
 import FirebaseFirestore
-import FirebaseFirestoreSwift
 
-public final class FirebaseUserRemoteDataSource: UserRemoteDataSource {
+public actor FirebaseUserRemoteDataSource: UserRemoteDataSource {
     private let db: Firestore
     private let collectionName: String
 
@@ -49,4 +46,3 @@ public final class FirebaseUserRemoteDataSource: UserRemoteDataSource {
         ])
     }
 }
-#endif
