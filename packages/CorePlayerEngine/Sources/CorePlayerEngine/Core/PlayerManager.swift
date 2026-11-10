@@ -133,7 +133,7 @@ public final class PlayerManager: VideoPlaybackTarget {
     /// network recovery, audio session and disk cache.
     public func makeFeedPlaybackCoordinator(
         policy: VideoPlaybackPolicy = VideoPlaybackPolicy(),
-        onPlaybackReady: @escaping @MainActor @Sendable (String) async -> Void = { _ in }
+        onPlaybackReady: @escaping @MainActor @Sendable (String, (any PlayerEngine)?) async -> Void = { _, _ in }
     ) -> VideoPlaybackCoordinator {
         VideoPlaybackCoordinator(
             playback: self,
@@ -150,6 +150,20 @@ public final class PlayerManager: VideoPlaybackTarget {
         source: MediaSource
     ) async throws {
         try await play(mediaId: mediaId, source: source, title: nil, artist: nil)
+    }
+
+    public func play(
+        mediaId: String,
+        source: MediaSource,
+        onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
+    ) async throws {
+        try await play(
+            mediaId: mediaId,
+            source: source,
+            title: nil,
+            artist: nil,
+            onEngineReady: onEngineReady
+        )
     }
 
     public func invalidatePendingPlaybackRequest() {
@@ -173,7 +187,8 @@ public final class PlayerManager: VideoPlaybackTarget {
         source: MediaSource,
         title: String? = nil,
         artist: String? = nil,
-        contentType: PlaybackContentType = .onDemand
+        contentType: PlaybackContentType = .onDemand,
+        onEngineReady: (@MainActor @Sendable (any PlayerEngine) async -> Void)? = nil
     ) async throws {
         
         // A new explicit play request supersedes any pending lifecycle resume.
@@ -187,7 +202,8 @@ public final class PlayerManager: VideoPlaybackTarget {
         
         try await orchestrator.play(
             mediaId: mediaId,
-            source: source
+            source: source,
+            onEngineReady: onEngineReady
         )
 
         guard lifecycleState.isCurrent(lifecycleGeneration) else {
