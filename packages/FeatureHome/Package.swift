@@ -19,13 +19,13 @@ let package = Package(
     targets: [
         .target(
             name: "FeatureHome",
-            exclude: ["Views"],
             dependencies: [
                 .product(name: "CoreAppData", package: "CoreAppData"),
                 .product(name: "CoreModel", package: "CoreModel"),
                 .product(name: "CorePlayerEngine", package: "CorePlayerEngine"),
                 .product(name: "CorePlayerUI", package: "CorePlayerUI")
-            ]
+            ],
+            exclude: ["Views"]
         ),
         .testTarget(
             name: "FeatureHomeTests",
