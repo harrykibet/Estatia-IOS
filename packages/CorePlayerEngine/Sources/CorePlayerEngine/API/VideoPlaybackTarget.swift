@@ -34,6 +34,10 @@ public protocol VideoPlaybackTarget: AnyObject {
         mediaId: String
     ) async -> AsyncStream<PlayerState>?
 
+    /// Returns the engine currently owned by the requested media identity.
+    /// Targets that cannot expose an engine may keep the default nil behavior.
+    func playerEngine(for mediaId: String) async -> (any PlayerEngine)?
+
     func isMediaActive(
         _ mediaId: String
     ) -> Bool
@@ -45,6 +49,10 @@ public extension VideoPlaybackTarget {
     /// Custom playback targets may opt into invalidation; the orchestrator
     /// provides the concrete cancellation and transport-cleanup behavior.
     func invalidatePendingPlaybackRequest() {}
+
+    func playerEngine(for mediaId: String) async -> (any PlayerEngine)? {
+        nil
+    }
 }
 
 extension PlaybackOrchestrator:
