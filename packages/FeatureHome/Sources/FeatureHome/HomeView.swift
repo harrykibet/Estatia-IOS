@@ -46,7 +46,9 @@ public struct HomeView: View {
                 }
             }
             .navigationTitle("Home")
+#if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+#endif
         }
         .task {
             playbackController.start()
