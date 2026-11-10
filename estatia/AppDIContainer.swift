@@ -121,10 +121,10 @@ public final class AppDIContainer {
         switch destination {
         case .home:
             // Wire MVVM for Home: create a property repository and inject into the HomeViewModel
-            let propertyRemote: PropertyRemoteDataSource = NoopPropertyRemoteDataSource()
+            let propertyRemote: PropertyRemoteDataSource = FirebasePropertyRemoteDataSource()
             let propertyRepo = RemotePropertyRepository(remote: propertyRemote)
             let homeVM = FeatureHome.HomeViewModel(repository: propertyRepo)
-            return AnyView(FeatureHome.HomeView(viewModel: homeVM))
+            return AnyView(FeatureHome.HomeFeedContentView(viewModel: homeVM))
 
         case .search:
             // Wire MVVM for Search
