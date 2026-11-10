@@ -55,6 +55,9 @@ public struct HomeView: View {
                 }
             }
             .navigationTitle("Home")
+            .onAppear {
+                viewModel.beginFeed()
+            }
             .task {
                 await viewModel.load()
             }
