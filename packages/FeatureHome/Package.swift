@@ -11,14 +11,18 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../CoreDesignSystem"),
-        .package(path: "../CoreAppData")
+        .package(path: "../CoreAppData"),
+        .package(path: "../CorePlayerEngine"),
+        .package(path: "../CorePlayerUI")
     ],
     targets: [
         .target(
             name: "FeatureHome",
             dependencies: [
                 .product(name: "CoreDesignSystem", package: "CoreDesignSystem"),
-                .product(name: "CoreAppData", package: "CoreAppData")
+                .product(name: "CoreAppData", package: "CoreAppData"),
+                .product(name: "CorePlayerEngine", package: "CorePlayerEngine"),
+                .product(name: "CorePlayerUI", package: "CorePlayerUI")
             ]
         ),
         .testTarget(
