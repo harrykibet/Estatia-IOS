@@ -114,8 +114,8 @@ final class MediaSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(
             provider.snapshots.last,
             NowPlayingSnapshot(
-                title: nil,
-                artist: nil,
+                title: "Estatia",
+                artist: "Estatia",
                 elapsedTime: 0,
                 duration: nil,
                 playbackRate: 0
