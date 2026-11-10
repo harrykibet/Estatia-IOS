@@ -12,6 +12,26 @@ import XCTest
 @MainActor
 final class VideoPlaybackCoordinatorTests: XCTestCase {
 
+    @MainActor
+    final class ManualAsyncGate {
+        private var continuation: CheckedContinuation<Void, Never>?
+        private(set) var isWaiting = false
+
+        func wait() async {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                isWaiting = true
+            }
+        }
+
+        func resume() {
+            guard let continuation else { return }
+            self.continuation = nil
+            isWaiting = false
+            continuation.resume()
+        }
+    }
+
     // MARK: - Test Doubles
 
     final class FakePlayback:
@@ -30,6 +50,11 @@ final class VideoPlaybackCoordinatorTests: XCTestCase {
             [Set<String>] = []
 
         private(set) var pauseCount = 0
+        private(set) var invalidationCount = 0
+
+        func invalidatePendingPlaybackRequest() {
+            invalidationCount += 1
+        }
 
         func play(
             mediaId: String,
@@ -98,6 +123,8 @@ final class VideoPlaybackCoordinatorTests: XCTestCase {
         private(set) var warmCalls:
             [WarmCall] = []
 
+        var warmGate: ManualAsyncGate?
+
         func warm(
             mediaId: String,
             source: MediaSource,
@@ -110,6 +137,11 @@ final class VideoPlaybackCoordinatorTests: XCTestCase {
                     priority: priority
                 )
             )
+
+            if let warmGate {
+                self.warmGate = nil
+                await warmGate.wait()
+            }
         }
     }
 
@@ -345,6 +377,49 @@ final class VideoPlaybackCoordinatorTests: XCTestCase {
                 )
             ]
         )
+    }
+
+    func testSupersededVisibilityStopsRemainingNeighborPreloads() async {
+        let playback = FakePlayback()
+        let streaming = FakeStreamingPipeline()
+        let gate = ManualAsyncGate()
+        streaming.warmGate = gate
+
+        let coordinator = makeCoordinator(
+            playback: playback,
+            streaming: streaming
+        )
+
+        coordinator.onItemVisible(
+            makeItem("first"),
+            previous: [makeItem("old-previous", score: 1.0)],
+            next: [
+                makeItem("old-next", score: 1.0),
+                makeItem("old-speculative", score: 1.0)
+            ]
+        )
+
+        await waitUntil { gate.isWaiting }
+
+        coordinator.onItemVisible(
+            makeItem("second"),
+            next: [makeItem("new-next", score: 1.0)]
+        )
+
+        // The first warm deliberately ignores cancellation. Once it returns,
+        // the old task must re-check its generation before touching N+1/N+2.
+        gate.resume()
+
+        await waitUntil {
+            playback.playRequests.contains("second")
+                && playback.preloadRequests.contains("new-next")
+                && streaming.warmCalls.contains { $0.mediaId == "new-next" }
+        }
+
+        XCTAssertFalse(playback.preloadRequests.contains("old-next"))
+        XCTAssertFalse(streaming.warmCalls.contains { $0.mediaId == "old-next" })
+        XCTAssertFalse(streaming.warmCalls.contains { $0.mediaId == "old-speculative" })
+        XCTAssertEqual(playback.invalidationCount, 2)
     }
 
     // MARK: - Score Thresholds

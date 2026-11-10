@@ -13,6 +13,9 @@ public protocol VideoPlaybackTarget: AnyObject {
 
     var activeMediaId: String? { get }
 
+    /// Invalidates a suspended play request that no longer owns feed visibility.
+    func invalidatePendingPlaybackRequest()
+
     func play(
         mediaId: String,
         source: MediaSource
@@ -36,6 +39,12 @@ public protocol VideoPlaybackTarget: AnyObject {
     ) -> Bool
 
     func pauseCurrent() async
+}
+
+public extension VideoPlaybackTarget {
+    /// Custom playback targets may opt into invalidation; the orchestrator
+    /// provides the concrete cancellation and transport-cleanup behavior.
+    func invalidatePendingPlaybackRequest() {}
 }
 
 extension PlaybackOrchestrator:

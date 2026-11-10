@@ -142,6 +142,44 @@ public final class PlaybackOrchestrator {
         }
     }
 
+    // MARK: - Pending Request Invalidation
+
+    /// Supersedes a play request that has not committed ownership yet.
+    ///
+    /// If the request has already entered the transport, enqueue a compensating
+    /// pause behind it. The media identity checks prevent that cleanup from
+    /// pausing a player that has since been reused or reclaimed by a newer play.
+    public func invalidatePendingPlaybackRequest() {
+        guard let mediaId = pendingMediaId else {
+            return
+        }
+
+        playGeneration &+= 1
+        pendingMediaId = nil
+
+        Task { @MainActor [weak self] in
+            guard let self,
+                  let managed = await self.pool.get(mediaId: mediaId),
+                  managed.mediaId == mediaId,
+                  self.pendingMediaId != mediaId,
+                  self.activeMediaId != mediaId
+            else {
+                return
+            }
+
+            try? await managed.perform {
+                guard managed.mediaId == mediaId,
+                      self.pendingMediaId != mediaId,
+                      self.activeMediaId != mediaId
+                else {
+                    return
+                }
+
+                try await managed.engine.pause()
+            }
+        }
+    }
+
     // MARK: - Preload
 
     public func preload(
