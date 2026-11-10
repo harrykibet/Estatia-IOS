@@ -6,21 +6,31 @@ import CoreModel
 
 @MainActor
 public final class HomeViewModel: ObservableObject {
-    @Published public var properties: [PropertyModel] = []
-    
+    @Published public private(set) var properties: [PropertyModel] = []
+    @Published public private(set) var isLoading = false
+    @Published public private(set) var errorMessage: String?
+
     private let repository: PropertyRepository
-    
+    private var hasLoaded = false
+
     public init(repository: PropertyRepository) {
         self.repository = repository
     }
-    
-    public func load() async {
+
+    public func load(forceRefresh: Bool = false) async {
+        guard !isLoading, forceRefresh || !hasLoaded else {
+            return
+        }
+
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
         do {
-            let results = try await repository.fetchProperties()
-            self.properties = results
+            properties = try await repository.fetchProperties()
+            hasLoaded = true
         } catch {
-            // Replace with a proper error handling strategy
-            print("HomeViewModel.load() failed: \(error)")
+            errorMessage = error.localizedDescription
         }
     }
 }
