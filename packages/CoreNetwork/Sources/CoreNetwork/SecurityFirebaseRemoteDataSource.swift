@@ -1,11 +1,8 @@
 import Foundation
 import CoreModel
-
-#if canImport(FirebaseFirestore) && canImport(FirebaseFirestoreSwift)
 import FirebaseFirestore
-import FirebaseFirestoreSwift
 
-public final class FirebaseSecurityRemoteDataSource: SecurityRemoteDataSource {
+public actor FirebaseSecurityRemoteDataSource: SecurityRemoteDataSource {
     private let db: Firestore
     private let collectionName: String
     private let documentId: String
@@ -30,4 +27,3 @@ public final class FirebaseSecurityRemoteDataSource: SecurityRemoteDataSource {
         return config
     }
 }
-#endif
