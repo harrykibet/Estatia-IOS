@@ -1,6 +1,36 @@
 import Testing
-@testable import home
+@testable import FeatureHome
+import CoreModel
 
-@Test func example() async throws {
-    // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+@Test func mapsPropertyVideoToStablePlaybackItem() async throws {
+    var property = PropertyModel()
+    property.id = "property-42"
+    property.title = "Modern apartment"
+    property.ownerName = "Listing owner"
+    property.videoUrl = [
+        " ",
+        "https://cdn.example.test/listing-42.m3u8"
+    ]
+
+    let item = HomeViewModel.playbackItem(for: property)
+
+    #expect(item?.mediaId == "property-42")
+    #expect(item?.source.url.absoluteString == "https://cdn.example.test/listing-42.m3u8")
+    #expect(item?.title == "Modern apartment")
+    #expect(item?.artist == "Listing owner")
+}
+
+@Test func doesNotCreatePlaybackItemWithoutStableIdentity() async throws {
+    var property = PropertyModel()
+    property.videoUrl = ["https://cdn.example.test/listing.mp4"]
+
+    #expect(HomeViewModel.playbackItem(for: property) == nil)
+}
+
+@Test func rejectsNonHTTPVideoSources() async throws {
+    var property = PropertyModel()
+    property.id = "property-43"
+    property.videoUrl = ["file:///tmp/listing.mp4"]
+
+    #expect(HomeViewModel.playbackItem(for: property) == nil)
 }
