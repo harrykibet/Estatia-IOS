@@ -43,14 +43,27 @@ public final class HomeViewModel: ObservableObject {
     /// Converts the backend property contract into the engine's stable feed
     /// identity. Invalid or absent URLs are deliberately excluded from autoplay.
     public static func playbackItem(for property: PropertyModel) -> FeedPlaybackItem? {
-        guard let mediaID = property.id, !mediaID.isEmpty,
-              let rawURL = property.videoUrl.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
-              let url = URL(string: rawURL),
-              let scheme = url.scheme?.lowercased(),
-              scheme == "https" || scheme == "http"
-        else {
+        guard let mediaID = property.id, !mediaID.isEmpty else {
             return nil
         }
+
+        // Match Android's HLS-first policy, then direct video, while retaining
+        // the legacy iOS videoUrl field as a backwards-compatible fallback.
+        let candidateURLs = (property.hlsUrl ?? [])
+            + (property.directVideoUrls ?? [])
+            + property.videoUrl
+        let url = candidateURLs.compactMap { rawValue -> URL? in
+            guard let candidate = URL(string: rawValue),
+                  let scheme = candidate.scheme?.lowercased(),
+                  (scheme == "https" || scheme == "http"),
+                  candidate.host != nil
+            else {
+                return nil
+            }
+            return candidate
+        }.first
+
+        guard let url else { return nil }
 
         return FeedPlaybackItem(
             mediaId: mediaID,
