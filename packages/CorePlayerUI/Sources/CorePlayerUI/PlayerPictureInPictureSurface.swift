@@ -56,7 +56,7 @@ struct PlayerPictureInPictureSurface: UIViewControllerRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+    final class Coordinator: NSObject, @preconcurrency AVPlayerViewControllerDelegate {
         var onPictureInPictureChanged: (Bool) -> Void
         private(set) var isPictureInPictureActive = false
 
