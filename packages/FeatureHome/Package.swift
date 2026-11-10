@@ -11,7 +11,6 @@ let package = Package(
         .library(name: "FeatureHome", targets: ["FeatureHome"]),
     ],
     dependencies: [
-        .package(path: "../CoreDesignSystem"),
         .package(path: "../CoreAppData"),
         .package(path: "../CoreModel"),
         .package(path: "../CorePlayerEngine"),
@@ -20,8 +19,8 @@ let package = Package(
     targets: [
         .target(
             name: "FeatureHome",
+            exclude: ["Views"],
             dependencies: [
-                .product(name: "CoreDesignSystem", package: "CoreDesignSystem"),
                 .product(name: "CoreAppData", package: "CoreAppData"),
                 .product(name: "CoreModel", package: "CoreModel"),
                 .product(name: "CorePlayerEngine", package: "CorePlayerEngine"),
