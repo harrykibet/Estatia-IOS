@@ -191,12 +191,17 @@ final class PlaybackOrchestratorTests: XCTestCase {
     }
 
     @MainActor
-    final class GatedStreamingPipeline: StreamingPipeline {
-        let gate: ManualAsyncGate
-        private(set) var didStartWarm = false
+    final class EngineHandoffRecorder {
+        var engine: (any PlayerEngine)?
+    }
 
-        init(gate: ManualAsyncGate) {
-            self.gate = gate
+    @MainActor
+    final class RecordingStreamingPipeline: StreamingPipeline {
+        let recorder: EngineHandoffRecorder
+        private(set) var engineWasReadyBeforeWarm = false
+
+        init(recorder: EngineHandoffRecorder) {
+            self.recorder = recorder
         }
 
         func warm(
@@ -204,8 +209,7 @@ final class PlaybackOrchestratorTests: XCTestCase {
             source: MediaSource,
             priority: WarmPriority
         ) async {
-            didStartWarm = true
-            await gate.wait()
+            engineWasReadyBeforeWarm = recorder.engine != nil
         }
     }
 
@@ -287,8 +291,8 @@ final class PlaybackOrchestratorTests: XCTestCase {
     }
 
     func testEngineReadyCallbackRunsBeforeVisibleCacheWarmCompletes() async throws {
-        let warmGate = ManualAsyncGate()
-        let streaming = GatedStreamingPipeline(gate: warmGate)
+        let recorder = EngineHandoffRecorder()
+        let streaming = RecordingStreamingPipeline(recorder: recorder)
         let engine = FakePlayerEngine()
         let pool = PlayerPool(
             configuration: PlayerPoolConfiguration(maxPlayers: 2, maxIdlePlayers: 1),
@@ -298,28 +302,19 @@ final class PlaybackOrchestratorTests: XCTestCase {
             pool: pool,
             streamingPipeline: streaming
         )
-        var callbackEngine: (any PlayerEngine)?
 
-        let playTask = Task { @MainActor in
-            try await orchestrator.play(
-                mediaId: "visible",
-                source: makeSource("visible"),
-                onEngineReady: { readyEngine in
-                    callbackEngine = readyEngine
-                }
-            )
-        }
+        try await orchestrator.play(
+            mediaId: "visible",
+            source: makeSource("visible"),
+            onEngineReady: { readyEngine in
+                recorder.engine = readyEngine
+            }
+        )
 
-        await waitUntil {
-            streaming.didStartWarm && callbackEngine != nil
-        }
-
-        let handedOffEngine = try XCTUnwrap(callbackEngine)
+        let handedOffEngine = try XCTUnwrap(recorder.engine)
         XCTAssertTrue(handedOffEngine === engine)
+        XCTAssertTrue(streaming.engineWasReadyBeforeWarm)
         XCTAssertEqual(orchestrator.activeMediaId, "visible")
-
-        warmGate.resume()
-        try await playTask.value
     }
 
     // MARK: - Per-Player Command Ordering
