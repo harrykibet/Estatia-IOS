@@ -266,6 +266,30 @@ final class VideoPlaybackCoordinatorTests: XCTestCase {
         )
     }
 
+    func testPlaybackReadyCallbackRunsOnlyAfterVisiblePlayCompletes() async {
+        let playback = FakePlayback()
+        let streaming = FakeStreamingPipeline()
+        var readyMediaIDs: [String] = []
+
+        let coordinator = VideoPlaybackCoordinator(
+            playback: playback,
+            streamingPipeline: streaming,
+            sleep: { _ in await Task.yield() },
+            onPlaybackReady: { mediaId in
+                readyMediaIDs.append(mediaId)
+            }
+        )
+
+        coordinator.onItemVisible(makeItem("visible"))
+
+        await waitUntil {
+            readyMediaIDs == ["visible"]
+        }
+
+        XCTAssertEqual(playback.playRequests, ["visible"])
+        XCTAssertEqual(readyMediaIDs, ["visible"])
+    }
+
     // MARK: - Fling
 
     func testFlingSuppressesNeighborPreloading()
