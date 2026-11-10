@@ -12,6 +12,7 @@ let package = Package(
     dependencies: [
         .package(path: "../CoreDesignSystem"),
         .package(path: "../CoreAppData"),
+        .package(path: "../CoreModel"),
         .package(path: "../CorePlayerEngine"),
         .package(path: "../CorePlayerUI")
     ],
@@ -21,13 +22,17 @@ let package = Package(
             dependencies: [
                 .product(name: "CoreDesignSystem", package: "CoreDesignSystem"),
                 .product(name: "CoreAppData", package: "CoreAppData"),
+                .product(name: "CoreModel", package: "CoreModel"),
                 .product(name: "CorePlayerEngine", package: "CorePlayerEngine"),
                 .product(name: "CorePlayerUI", package: "CorePlayerUI")
             ]
         ),
         .testTarget(
             name: "FeatureHomeTests",
-            dependencies: ["FeatureHome"]
+            dependencies: [
+                "FeatureHome",
+                .product(name: "CoreModel", package: "CoreModel")
+            ]
         ),
     ]
 )
