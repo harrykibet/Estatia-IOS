@@ -142,7 +142,12 @@ func makeFeedPlaybackItem(from property: PropertyModel) -> FeedPlaybackItem? {
         return nil
     }
 
-    let sourceURL = property.videoUrl.lazy.compactMap { value -> URL? in
+    // Android prefers HLS, then a direct file URL; legacy iOS URLs remain the
+    // final fallback for records that have not migrated to the new fields.
+    let candidateURLs = (property.hlsUrl ?? [])
+        + (property.directVideoUrls ?? [])
+        + property.videoUrl
+    let sourceURL = candidateURLs.lazy.compactMap { value -> URL? in
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
               let scheme = url.scheme?.lowercased(),
@@ -161,7 +166,7 @@ func makeFeedPlaybackItem(from property: PropertyModel) -> FeedPlaybackItem? {
     return FeedPlaybackItem(
         mediaId: mediaId,
         source: MediaSource(url: sourceURL, type: .auto),
-        matchScore: 0.5,
+        matchScore: property.matchScore,
         title: property.title,
         artist: property.ownerName
     )
