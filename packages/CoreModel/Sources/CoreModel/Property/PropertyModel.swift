@@ -13,6 +13,9 @@ public struct PropertyModel: Codable, Identifiable {
     public var price: Double?
     public var imageUrl: [String]
     public var videoUrl: [String]
+    /// Backend media fields shared with Android's property feed contract.
+    public var directVideoUrls: [String]?
+    public var hlsUrl: [String]?
     public var video: Bool
     public var latitude: Double?
     public var longitude: Double?
@@ -43,6 +46,8 @@ public struct PropertyModel: Codable, Identifiable {
         self.price = nil
         self.imageUrl = []
         self.videoUrl = []
+        self.directVideoUrls = nil
+        self.hlsUrl = nil
         self.video = false
         self.latitude = nil
         self.longitude = nil
