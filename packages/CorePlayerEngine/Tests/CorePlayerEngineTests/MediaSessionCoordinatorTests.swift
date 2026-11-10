@@ -82,7 +82,7 @@ final class MediaSessionCoordinatorTests: XCTestCase {
             provider.snapshots.last,
             NowPlayingSnapshot(
                 title: "Listing video",
-                artist: nil,
+                artist: "Estatia",
                 elapsedTime: 9.25,
                 duration: 30,
                 playbackRate: 1
