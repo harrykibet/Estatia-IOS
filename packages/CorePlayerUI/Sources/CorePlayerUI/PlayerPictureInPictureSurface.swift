@@ -68,6 +68,10 @@ struct PlayerPictureInPictureSurface: UIViewControllerRepresentable {
             _ playerViewController: AVPlayerViewController
         ) {
             isPictureInPictureActive = true
+            PlayerPictureInPictureRegistry.shared.retain(
+                controller: playerViewController,
+                coordinator: self
+            )
             onPictureInPictureChanged(true)
         }
 
@@ -75,6 +79,10 @@ struct PlayerPictureInPictureSurface: UIViewControllerRepresentable {
             _ playerViewController: AVPlayerViewController
         ) {
             isPictureInPictureActive = true
+            PlayerPictureInPictureRegistry.shared.retain(
+                controller: playerViewController,
+                coordinator: self
+            )
             onPictureInPictureChanged(true)
         }
 
@@ -83,6 +91,7 @@ struct PlayerPictureInPictureSurface: UIViewControllerRepresentable {
         ) {
             isPictureInPictureActive = false
             onPictureInPictureChanged(false)
+            PlayerPictureInPictureRegistry.shared.release()
         }
 
         func playerViewController(
@@ -91,6 +100,7 @@ struct PlayerPictureInPictureSurface: UIViewControllerRepresentable {
         ) {
             isPictureInPictureActive = false
             onPictureInPictureChanged(false)
+            PlayerPictureInPictureRegistry.shared.release()
         }
 
         func playerViewController(
@@ -101,6 +111,32 @@ struct PlayerPictureInPictureSurface: UIViewControllerRepresentable {
             // second player or route to reconstruct when PiP returns inline.
             completionHandler(true)
         }
+    }
+}
+
+/// AVKit can keep PiP running after the SwiftUI feed cell is dismantled.
+/// Retaining the active controller and delegate keeps lifecycle callbacks alive
+/// until PiP actually stops; only one PiP video can be active per application.
+@MainActor
+private final class PlayerPictureInPictureRegistry {
+    static let shared = PlayerPictureInPictureRegistry()
+
+    private var controller: AVPlayerViewController?
+    private var coordinator: PlayerPictureInPictureSurface.Coordinator?
+
+    func retain(
+        controller: AVPlayerViewController,
+        coordinator: PlayerPictureInPictureSurface.Coordinator
+    ) {
+        self.controller = controller
+        self.coordinator = coordinator
+    }
+
+    func release() {
+        controller?.delegate = nil
+        controller?.player = nil
+        controller = nil
+        coordinator = nil
     }
 }
 #endif
