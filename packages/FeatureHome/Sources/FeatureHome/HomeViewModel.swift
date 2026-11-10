@@ -17,6 +17,7 @@ public final class HomeViewModel: ObservableObject {
     private let playbackCoordinator: VideoPlaybackCoordinator
     private var composedMediaIDs: Set<String> = []
     private var feedGeneration: UInt64 = 0
+    private var pinRevision: UInt64 = 0
 
     public init(
         repository: PropertyRepository,
@@ -94,10 +95,15 @@ public final class HomeViewModel: ObservableObject {
 
     public func beginFeed() {
         feedGeneration &+= 1
+        pinRevision &+= 1
         composedMediaIDs.removeAll()
         let generation = feedGeneration
+        let revision = pinRevision
         Task { [weak self] in
-            guard let self, self.feedGeneration == generation else { return }
+            guard let self,
+                  self.feedGeneration == generation,
+                  self.pinRevision == revision
+            else { return }
             await self.playbackCoordinator.updateComposedMedia([])
         }
     }
@@ -113,8 +119,13 @@ public final class HomeViewModel: ObservableObject {
         }
         let snapshot = composedMediaIDs
         let generation = feedGeneration
+        pinRevision &+= 1
+        let revision = pinRevision
         Task { [weak self] in
-            guard let self, self.feedGeneration == generation else { return }
+            guard let self,
+                  self.feedGeneration == generation,
+                  self.pinRevision == revision
+            else { return }
             await self.playbackCoordinator.updateComposedMedia(snapshot)
         }
     }
@@ -135,14 +146,21 @@ public final class HomeViewModel: ObservableObject {
 
     public func endFeed() {
         feedGeneration &+= 1
+        pinRevision &+= 1
         let generation = feedGeneration
+        let revision = pinRevision
         composedMediaIDs.removeAll()
         playbackCoordinator.clear()
 
         Task { [weak self] in
-            guard let self, self.feedGeneration == generation else { return }
+            guard let self,
+                  self.feedGeneration == generation,
+                  self.pinRevision == revision
+            else { return }
             await self.playbackCoordinator.pause()
-            guard self.feedGeneration == generation else { return }
+            guard self.feedGeneration == generation,
+                  self.pinRevision == revision
+            else { return }
             await self.playbackCoordinator.updateComposedMedia([])
         }
     }
