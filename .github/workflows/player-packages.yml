@@ -18,6 +18,7 @@ on:
       - "packages/CorePlayerEngine/**"
       - "packages/CorePlayerUI/**"
       - "packages/CoreModel/**"
+      - "packages/CoreNetwork/**"
       - "packages/FeatureHome/**"
       - ".github/workflows/player-packages.yml"
 
