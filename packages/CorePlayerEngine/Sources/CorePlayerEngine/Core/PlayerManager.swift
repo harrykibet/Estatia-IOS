@@ -23,6 +23,8 @@ public final class PlayerManager {
     private var latestBitrateProgress: PlaybackProgress?
     private var bitrateMonitoringGeneration: UInt64 = 0
     private var lowBandwidthDetector = SustainedLowBandwidthDetector()
+    private var activeContentType: PlaybackContentType = .onDemand
+    private var wasPlayingBeforeBackground = false
     public private(set) var isSustainedLowBandwidth = false
     private var poolEnvironment = PlayerPoolEnvironment(
         physicalMemoryMB: Int(ProcessInfo.processInfo.physicalMemory / (1_024 * 1_024))
@@ -108,14 +110,14 @@ public final class PlayerManager {
         
         environmentManager.start(
             onAppBackgrounded: { [weak self] in
-                Task {
-                    await self?.pause()
+                Task { @MainActor [weak self] in
+                    await self?.handleAppBackgrounded()
                 }
             },
             onAppForegrounded: { [weak self] in
-                // Recovery coordinator handles transport recovery.
-                // Do not automatically resume user-paused media.
-                _ = self
+                Task { @MainActor [weak self] in
+                    await self?.handleAppForegrounded()
+                }
             }
         )
     }
@@ -128,6 +130,8 @@ public final class PlayerManager {
         contentType: PlaybackContentType = .onDemand
     ) async throws {
         
+        // A new explicit play request supersedes any pending lifecycle resume.
+        wasPlayingBeforeBackground = false
         mediaSessionProvider.configureNowPlaying(
             title: title,
             artist: artist
@@ -142,6 +146,7 @@ public final class PlayerManager {
 
         activeMediaId = orchestrator.activeMediaId
         guard activeMediaId == mediaId else { return }
+        activeContentType = contentType
         await startBitrateMonitoring(
             mediaId: mediaId,
             contentType: contentType
@@ -149,6 +154,41 @@ public final class PlayerManager {
     }
     
     public func pause() async {
+        // An explicit pause must cancel a previously captured background
+        // resume intent. Lifecycle-triggered pauses use the private overload.
+        wasPlayingBeforeBackground = false
+        await pausePlayback()
+    }
+
+    private func handleAppBackgrounded() async {
+        wasPlayingBeforeBackground = await orchestrator.isCurrentlyPlaying()
+        await pausePlayback()
+    }
+
+    private func handleAppForegrounded() async {
+        guard wasPlayingBeforeBackground else { return }
+        // Consume the intent before suspension so duplicate foreground events
+        // cannot issue multiple resume commands.
+        wasPlayingBeforeBackground = false
+
+        guard let mediaId = activeMediaId else { return }
+
+        do {
+            try await orchestrator.resumeCurrent()
+            guard activeMediaId == mediaId else { return }
+            audioSession.request()
+            await startBitrateMonitoring(
+                mediaId: mediaId,
+                contentType: activeContentType
+            )
+        } catch {
+            // Keep the app responsive if the player was released or replaced
+            // while the application was transitioning to the foreground.
+            audioSession.abandon()
+        }
+    }
+
+    private func pausePlayback() async {
 
         bitrateMonitoringGeneration &+= 1
         bitrateTask?.cancel()
