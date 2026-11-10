@@ -24,6 +24,13 @@ let package = Package(
                 .product(name: "CoreModel", package: "CoreModel"),
                 .product(name: "CorePlayerEngine", package: "coreplayerengine"),
                 .product(name: "CorePlayerUI", package: "coreplayerui")
+            ],
+            exclude: [
+                "Views/HomeRouteView.swift",
+                "Views/HomeScreenView.swift",
+                "Views/ErrorStateView.swift",
+                "Views/EmptyStateView.swift",
+                "Views/LoadingStateView.swift"
             ]
         ),
         .testTarget(
