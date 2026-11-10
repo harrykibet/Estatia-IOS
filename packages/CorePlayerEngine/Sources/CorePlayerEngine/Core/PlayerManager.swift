@@ -219,6 +219,11 @@ public final class PlayerManager: VideoPlaybackTarget {
                 // continues in the background of this call.
                 self?.activeMediaId = mediaId
                 self?.activeContentType = contentType
+                await self?.startMediaSessionObservation(
+                    mediaId: mediaId,
+                    title: title,
+                    artist: artist
+                )
                 if let engine {
                     await onEngineReady?(engine)
                 }
@@ -250,11 +255,6 @@ public final class PlayerManager: VideoPlaybackTarget {
             mediaId: mediaId,
             contentType: contentType,
             lifecycleGeneration: lifecycleGeneration
-        )
-        await startMediaSessionObservation(
-            mediaId: mediaId,
-            title: title,
-            artist: artist
         )
     }
     
