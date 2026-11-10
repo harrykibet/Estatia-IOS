@@ -346,7 +346,7 @@ final class PlaybackOrchestratorTests: XCTestCase {
             } catch is CancellationError {
                 return true
             } catch {
-                XCTFail("Unexpected play error: \\(error)")
+                XCTFail("Unexpected play error: \(error)")
                 return false
             }
         }
@@ -384,7 +384,7 @@ final class PlaybackOrchestratorTests: XCTestCase {
             } catch is CancellationError {
                 return true
             } catch {
-                XCTFail("Unexpected play error: \\(error)")
+                XCTFail("Unexpected play error: \(error)")
                 return false
             }
         }
