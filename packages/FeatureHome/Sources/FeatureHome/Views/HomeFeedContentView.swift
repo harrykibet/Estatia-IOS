@@ -1,34 +1,14 @@
-// Auto-generated stub from /Users/builder/RealEstateApp-Android/feature/home/src/main/java/com/estatia/realestate/apps/feature/home/ui/screens/HomeScreen.kt composable HomeFeedContent
 import SwiftUI
-import CoreDesignSystem
 
+/// Public Home feed entry point used by the app composition root.
 public struct HomeFeedContentView: View {
-    @StateObject public var viewModel = HomeFeedContentViewModel()
+    private let viewModel: HomeViewModel
 
-    public init(viewModel: HomeFeedContentViewModel = .init()) {
-        self._viewModel = StateObject(wrappedValue: viewModel)
+    public init(viewModel: HomeViewModel) {
+        self.viewModel = viewModel
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .center, spacing: 16) {
-                EstatiaText("Real Estate App")
-                EstatiaCircularProgress(state: viewModel.isLoading ? .indeterminate : .idle)
-            }
-            .frame(maxWidth: .infinity)
-        }
+        HomeView(viewModel: viewModel)
     }
 }
-
-public final class HomeFeedContentViewModel: ObservableObject {
-    // TODO: Implement state and actions ported from Android ViewModel/Presenter
-    @Published public var isLoading: Bool = false
-
-    public init() {}
-}
-
-#if DEBUG
-struct HomeFeedContentView_Preview: PreviewProvider {
-    static var previews: some View { HomeFeedContentView() }
-}
-#endif
