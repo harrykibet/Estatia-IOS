@@ -95,8 +95,7 @@ public struct PropertyModel: Codable, Identifiable {
 
         if let decodedDate = try? container.decodeIfPresent(Date.self, forKey: .createdAt) {
             createdAt = decodedDate
-        } else if let milliseconds = try? container.decodeIfPresent(Int64.self, forKey: .createdAt),
-                  let milliseconds {
+        } else if let milliseconds = try? container.decode(Int64.self, forKey: .createdAt) {
             createdAt = Date(timeIntervalSince1970: Double(milliseconds) / 1_000)
         } else {
             createdAt = nil
