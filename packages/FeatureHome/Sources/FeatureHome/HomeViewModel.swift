@@ -24,6 +24,7 @@ public final class HomeViewModel: ObservableObject {
         self.repository = repository
         self.playerManager = playerManager
         self.playbackCoordinator = playerManager.makeFeedPlaybackCoordinator()
+        playerManager.start()
     }
 
     public func load() async {
