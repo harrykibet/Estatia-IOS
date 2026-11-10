@@ -13,6 +13,9 @@ public protocol VideoPlaybackTarget: AnyObject {
 
     var activeMediaId: String? { get }
 
+    /// Invalidates a suspended play request that no longer owns feed visibility.
+    func invalidatePendingPlaybackRequest()
+
     func play(
         mediaId: String,
         source: MediaSource
