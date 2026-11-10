@@ -84,7 +84,10 @@ public struct HomeView: View {
                         property: item.property,
                         engine: item.property.id.flatMap { playbackController.engines[$0] },
                         isMuted: playbackController.isMuted,
-                        onMuteToggle: playbackController.toggleMute
+                        onMuteToggle: playbackController.toggleMute,
+                        onPictureInPictureChanged: { isActive in
+                            playbackController.setPictureInPictureActive(isActive)
+                        }
                     )
                     .containerRelativeFrame(.vertical)
                     .onAppear {
@@ -123,6 +126,7 @@ private struct HomeFeedCardView: View {
     let engine: (any PlayerEngine)?
     let isMuted: Bool
     let onMuteToggle: () -> Void
+    let onPictureInPictureChanged: (Bool) -> Void
 
     var body: some View {
         GeometryReader { geometry in
@@ -134,7 +138,8 @@ private struct HomeFeedCardView: View {
                         engine: engine,
                         title: property.title,
                         isMuted: isMuted,
-                        onMuteToggle: onMuteToggle
+                        onMuteToggle: onMuteToggle,
+                        onPictureInPictureChanged: onPictureInPictureChanged
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .id(ObjectIdentifier(engine))
