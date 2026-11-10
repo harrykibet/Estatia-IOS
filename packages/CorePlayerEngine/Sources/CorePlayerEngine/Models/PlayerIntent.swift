@@ -13,6 +13,8 @@ public enum PlayerIntent {
     case loadIdentified(mediaId: String, source: MediaSource)
     case play
     case pause
+    case audioInterruptionBegan
+    case audioInterruptionEnded(shouldResume: Bool)
     case seek(TimeInterval)
     case stop
     case release
