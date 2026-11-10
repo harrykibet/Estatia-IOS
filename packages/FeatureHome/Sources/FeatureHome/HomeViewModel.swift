@@ -45,7 +45,7 @@ public final class HomeViewModel: ObservableObject {
 
     /// Converts the backend property contract into the engine's stable feed
     /// identity. Invalid or absent URLs are deliberately excluded from autoplay.
-    public static func playbackItem(for property: PropertyModel) -> FeedPlaybackItem? {
+    public nonisolated static func playbackItem(for property: PropertyModel) -> FeedPlaybackItem? {
         guard let mediaID = property.id, !mediaID.isEmpty else {
             return nil
         }
