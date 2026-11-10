@@ -42,6 +42,9 @@ public struct HomeView: View {
                                     next: Array(viewModel.properties.dropFirst(index + 1).prefix(2)),
                                     viewModel: viewModel
                                 )
+                                .id(
+                                    "\(entry.element.id ?? "home-\(index)")|\(HomeViewModel.playbackItem(for: entry.element)?.source.url.absoluteString ?? "no-video")"
+                                )
                                 .containerRelativeFrame(.vertical)
                             }
                         }
@@ -182,7 +185,7 @@ private struct HomePropertyFeedCard: View {
                 )
             }
         }
-        .task(id: isVisible) {
+        .task(id: isVisible ? videoItem?.source.url.absoluteString : nil) {
             guard isVisible, videoItem != nil else {
                 engine = nil
                 engineLoadFailed = false
