@@ -7,6 +7,7 @@ public final class PlayerManager {
     private let pool: PlayerPool
     
     private let orchestrator: PlaybackOrchestrator
+    private let streamingPipeline: StreamingPipeline
     
     private let networkMonitor: NetworkConnectivityProviding
     
@@ -25,6 +26,7 @@ public final class PlayerManager {
     private var lowBandwidthDetector = SustainedLowBandwidthDetector()
     private var activeContentType: PlaybackContentType = .onDemand
     private var lifecycleState = PlaybackLifecycleState()
+    private var didStart = false
     private var backgroundTransitionTask: Task<Void, Never>?
     public private(set) var isSustainedLowBandwidth = false
     private var poolEnvironment = PlayerPoolEnvironment(
@@ -88,6 +90,7 @@ public final class PlayerManager {
         
         self.pool = pool
         self.orchestrator = orchestrator
+        self.streamingPipeline = streamingPipeline
         self.networkMonitor = networkMonitor
         self.networkRecovery = NetworkRecoveryCoordinator(
             network: networkMonitor,
@@ -96,6 +99,8 @@ public final class PlayerManager {
     }
     
     public func start() {
+        guard !didStart else { return }
+        didStart = true
 
         poolEnvironmentMonitor.start { [weak self] environment in
             guard let self else { return }
@@ -270,6 +275,29 @@ public final class PlayerManager {
         audioSession.abandon()
     }
     
+    /// Returns the pool-owned engine for a media identity. Feed cells use this
+    /// same engine instance that the playback coordinator commands.
+    public func playerEngine(
+        mediaId: String,
+        source: MediaSource
+    ) async throws -> PlayerEngine {
+        let managed = try await pool.getOrCreate(mediaId: mediaId, source: source)
+        guard managed.mediaId == mediaId else { throw CancellationError() }
+        return managed.engine
+    }
+
+    /// Creates a feed coordinator backed by this manager's orchestrator and
+    /// the exact streaming pipeline used for visible playback.
+    public func makeFeedPlaybackCoordinator(
+        policy: VideoPlaybackPolicy = VideoPlaybackPolicy()
+    ) -> VideoPlaybackCoordinator {
+        VideoPlaybackCoordinator(
+            playback: self,
+            streamingPipeline: streamingPipeline,
+            policy: policy
+        )
+    }
+
     public func preload(
         mediaId: String,
         source: MediaSource
@@ -459,5 +487,30 @@ public final class PlayerManager {
         environmentManager.stop()
         
         activeMediaId = nil
+    }
+}
+
+
+// MARK: - Feed playback integration
+
+extension PlayerManager: VideoPlaybackTarget {
+    public func invalidatePendingPlaybackRequest() {
+        orchestrator.invalidatePendingPlaybackRequest()
+    }
+
+    public func play(mediaId: String, source: MediaSource) async throws {
+        try await play(mediaId: mediaId, source: source, title: nil, artist: nil)
+    }
+
+    public func updateComposedMedia(_ mediaIds: Set<String>) async {
+        await pool.updatePinnedIds(mediaIds)
+    }
+
+    public func isMediaActive(_ mediaId: String) -> Bool {
+        activeMediaId == mediaId
+    }
+
+    public func pauseCurrent() async {
+        await pause()
     }
 }
