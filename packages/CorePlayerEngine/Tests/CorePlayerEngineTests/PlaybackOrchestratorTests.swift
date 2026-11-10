@@ -321,6 +321,87 @@ final class PlaybackOrchestratorTests: XCTestCase {
         XCTAssertEqual(finalState, .playing)
     }
 
+    // MARK: - Pending Play Invalidation
+
+    func testInvalidatingPendingPlayDuringLoadPreventsTransportStart() async {
+        let loadGate = ManualAsyncGate()
+        let engine = FakePlayerEngine()
+        engine.loadGate = loadGate
+        let pool = PlayerPool(
+            configuration: PlayerPoolConfiguration(maxPlayers: 2, maxIdlePlayers: 1),
+            factory: { engine }
+        )
+        let orchestrator = PlaybackOrchestrator(
+            pool: pool,
+            streamingPipeline: NoOpStreamingPipeline()
+        )
+
+        let playTask = Task { @MainActor in
+            do {
+                try await orchestrator.play(
+                    mediaId: "stale-load",
+                    source: makeSource("stale-load")
+                )
+                return false
+            } catch is CancellationError {
+                return true
+            } catch {
+                XCTFail("Unexpected play error: \\(error)")
+                return false
+            }
+        }
+
+        await waitUntil { loadGate.isWaiting }
+        orchestrator.invalidatePendingPlaybackRequest()
+        loadGate.resume()
+
+        let wasCancelled = await playTask.value
+        XCTAssertTrue(wasCancelled)
+        XCTAssertNil(orchestrator.activeMediaId)
+        XCTAssertEqual(engine.playCount, 0)
+    }
+
+    func testInvalidatingPendingPlayAfterTransportStartsQueuesIdentitySafePause() async {
+        let playGate = ManualAsyncGate()
+        let engine = FakePlayerEngine()
+        engine.playGate = playGate
+        let pool = PlayerPool(
+            configuration: PlayerPoolConfiguration(maxPlayers: 2, maxIdlePlayers: 1),
+            factory: { engine }
+        )
+        let orchestrator = PlaybackOrchestrator(
+            pool: pool,
+            streamingPipeline: NoOpStreamingPipeline()
+        )
+
+        let playTask = Task { @MainActor in
+            do {
+                try await orchestrator.play(
+                    mediaId: "stale-transport",
+                    source: makeSource("stale-transport")
+                )
+                return false
+            } catch is CancellationError {
+                return true
+            } catch {
+                XCTFail("Unexpected play error: \\(error)")
+                return false
+            }
+        }
+
+        await waitUntil { playGate.isWaiting }
+        orchestrator.invalidatePendingPlaybackRequest()
+        playGate.resume()
+
+        let wasCancelled = await playTask.value
+        XCTAssertTrue(wasCancelled)
+        await waitUntil { engine.pauseCount == 1 }
+
+        XCTAssertNil(orchestrator.activeMediaId)
+        let finalState = await engine.currentState
+        XCTAssertEqual(finalState, .paused)
+    }
+
     // MARK: - Recovery Supersession
 
     func testRecoveryDoesNotAutoPlayWhenPreviousPlaybackIntentWasPaused()
