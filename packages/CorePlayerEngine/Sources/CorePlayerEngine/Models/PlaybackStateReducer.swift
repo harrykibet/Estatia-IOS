@@ -42,7 +42,8 @@ public struct PlaybackStateReducer: Sendable {
 
         case playbackCompleted
 
-        case networkLost
+        /// Connectivity was lost; the actor supplies the latest user playback intent.
+        case networkLost(resumePlayback: Bool)
         case networkRestored
 
         case failed(PlayerError)
@@ -176,7 +177,7 @@ public struct PlaybackStateReducer: Sendable {
 
         // MARK: - Network
 
-        case .networkLost:
+        case .networkLost(let resumePlayback):
             guard state == .loading ||
                     state == .ready ||
                     state == .playing ||
@@ -186,12 +187,9 @@ public struct PlaybackStateReducer: Sendable {
                 return state
             }
 
-            if state == .playing ||
-                state == .buffering
-            {
-                resumeAfterInterruption = true
-            }
-
+            // Command intent is authoritative even while observed transport
+            // state is still buffering after a user pause request.
+            resumeAfterInterruption = resumePlayback
             state = .reconnecting
 
         case .networkRestored:

@@ -506,19 +506,22 @@ extension PlaybackOrchestrator: PlaybackRecoveryTarget {
             throw CancellationError()
         }
 
-        // Recovery load and play are one serialized operation. A later play,
-        // pause, stop or release for this same engine waits behind it. The
-        // generation check between load and play prevents stale recovery from
-        // restarting an item after a newer user request.
+        // Recovery load and any resumed play are one serialized operation.
+        // Capture intent before replacing the item, then revalidate ownership
+        // before issuing play so stale recovery cannot restart old media.
         try await managed.perform {
-            try await managed.engine.load(
+            let shouldResume = await managed.engine.shouldResumeAfterInterruption
+
+            try await managed.engine.loadForNetworkRecovery(
                 mediaId: playback.mediaId,
                 source: playback.source
             )
 
             try self.requireCurrentGeneration(generation)
 
-            try await managed.engine.play()
+            if shouldResume {
+                try await managed.engine.play()
+            }
         }
 
         try requireCurrentGeneration(generation)

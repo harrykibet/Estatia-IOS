@@ -58,6 +58,12 @@ final class DefaultPlayerEngine: PlayerEngine, AVPlayerProviding {
             await actor.currentState
         }
     }
+
+    var shouldResumeAfterInterruption: Bool {
+        get async {
+            await actor.shouldResumeAfterInterruption
+        }
+    }
     
     var events: AsyncStream<PlayerEvent> {
         eventEmitter.stream
@@ -78,6 +84,16 @@ final class DefaultPlayerEngine: PlayerEngine, AVPlayerProviding {
                 mediaId: mediaId,
                 source: source
             )
+        )
+    }
+
+    func loadForNetworkRecovery(
+        mediaId: String,
+        source: MediaSource
+    ) async throws {
+        try await actor.loadForNetworkRecovery(
+            mediaId: mediaId,
+            source: source
         )
     }
     
