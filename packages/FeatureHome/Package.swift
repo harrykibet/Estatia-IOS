@@ -34,7 +34,8 @@ let package = Package(
                 "Views/HomeContentPreviewView.swift",
                 "Views/HomeEmptyPreviewView.swift",
                 "Views/HomeErrorPreviewView.swift",
-                "Views/HomeLoadingPreviewView.swift"
+                "Views/HomeLoadingPreviewView.swift",
+                "Views/HomeContentSwahiliPreviewView.swift"
             ]
         ),
         .testTarget(
