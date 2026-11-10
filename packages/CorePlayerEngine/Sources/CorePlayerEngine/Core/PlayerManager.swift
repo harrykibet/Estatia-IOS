@@ -30,8 +30,6 @@ public final class PlayerManager: VideoPlaybackTarget {
 
     private struct PendingAudioInterruption {
         let mediaId: String
-        let lifecycleGeneration: UInt64
-        let shouldResume: Bool
     }
     private var bitrateTask: Task<Void, Never>?
     private var monitoredBitrateEngine: (any AVPlayerProviding)?
@@ -537,22 +535,9 @@ public final class PlayerManager: VideoPlaybackTarget {
             return
         }
 
-        let generation = lifecycleState.generation
-        let shouldResume = await orchestrator.shouldResumeAfterInterruption(
-            mediaId: mediaId
-        )
-        guard lifecycleState.isCurrent(generation),
-              activeMediaId == mediaId
-        else {
-            return
-        }
+        guard activeMediaId == mediaId else { return }
 
-        pendingAudioInterruption = PendingAudioInterruption(
-            mediaId: mediaId,
-            lifecycleGeneration: generation,
-            shouldResume: shouldResume
-        )
-
+        pendingAudioInterruption = PendingAudioInterruption(mediaId: mediaId)
         stopBitrateMonitoring()
         await orchestrator.pauseForAudioInterruption(mediaId: mediaId)
     }
@@ -561,9 +546,6 @@ public final class PlayerManager: VideoPlaybackTarget {
         mediaId: String,
         lifecycleGeneration: UInt64
     ) async {
-        let shouldResume = await orchestrator.shouldResumeAfterInterruption(
-            mediaId: mediaId
-        )
         guard lifecycleState.isCurrent(lifecycleGeneration),
               activeMediaId == mediaId,
               audioInterruptionActive
@@ -571,14 +553,8 @@ public final class PlayerManager: VideoPlaybackTarget {
             return
         }
 
-        pendingAudioInterruption = PendingAudioInterruption(
-            mediaId: mediaId,
-            lifecycleGeneration: lifecycleGeneration,
-            shouldResume: shouldResume
-        )
-        if shouldResume {
-            await orchestrator.pauseForAudioInterruption(mediaId: mediaId)
-        }
+        pendingAudioInterruption = PendingAudioInterruption(mediaId: mediaId)
+        await orchestrator.pauseForAudioInterruption(mediaId: mediaId)
     }
 
     private func handleAudioInterruptionEnded(shouldResume systemAllowsResume: Bool) async {
@@ -590,16 +566,16 @@ public final class PlayerManager: VideoPlaybackTarget {
 
         guard activeMediaId == interruption.mediaId else { return }
 
-        // A user play/pause command may have arrived while the system owned
-        // audio. Prefer that newer engine intent over the original snapshot.
+        // PlayerActor keeps desired playback separate from observed transport
+        // state. Reading it here respects user play/pause commands issued
+        // directly by the player UI while the system owned audio.
         let currentIntent = await orchestrator.shouldResumeAfterInterruption(
             mediaId: interruption.mediaId
         )
         guard activeMediaId == interruption.mediaId else { return }
 
         // PlayerEngine preserves desired playback intent while interrupted.
-        // Read it at interruption end so a pause issued directly by the player
-        // UI (without going through PlayerManager) still cancels auto-resume.
+        // A pause issued directly by the player UI must cancel auto-resume.
         let shouldResume = systemAllowsResume && currentIntent
 
         do {
