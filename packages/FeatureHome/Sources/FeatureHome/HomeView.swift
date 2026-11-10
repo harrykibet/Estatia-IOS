@@ -125,7 +125,7 @@ private struct HomeFeedCardView: View {
                 .allowsHitTesting(false)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(property.title?.isEmpty == false ? property.title! : "Untitled property")
+                    Text(property.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled property")
                         .font(.title3.weight(.semibold))
                         .lineLimit(2)
 
