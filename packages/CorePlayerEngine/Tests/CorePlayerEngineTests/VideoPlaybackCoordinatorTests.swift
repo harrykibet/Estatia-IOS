@@ -275,7 +275,7 @@ final class VideoPlaybackCoordinatorTests: XCTestCase {
             playback: playback,
             streamingPipeline: streaming,
             sleep: { _ in await Task.yield() },
-            onPlaybackReady: { mediaId in
+            onPlaybackReady: { mediaId, _ in
                 readyMediaIDs.append(mediaId)
             }
         )
