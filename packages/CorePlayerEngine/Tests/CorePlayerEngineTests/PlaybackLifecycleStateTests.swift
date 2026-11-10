@@ -76,6 +76,24 @@ final class PlaybackLifecycleStateTests: XCTestCase {
         XCTAssertFalse(state.beginForegroundTransition().shouldResume)
     }
 
+
+    func testExplicitPauseAfterCaptureClearsPreviouslyActiveResumeIntent() {
+        var state = PlaybackLifecycleState()
+
+        let backgroundGeneration = state.beginBackgroundTransition()
+        XCTAssertTrue(
+            state.recordBackgroundPlayback(
+                wasPlaying: true,
+                generation: backgroundGeneration
+            )
+        )
+
+        let pauseGeneration = state.invalidateForExplicitCommand()
+        XCTAssertFalse(state.isCurrent(backgroundGeneration))
+        XCTAssertTrue(state.isCurrent(pauseGeneration))
+        XCTAssertFalse(state.beginForegroundTransition().shouldResume)
+    }
+
     func testForegroundBeforeBackgroundSnapshotCompletesDiscardsStaleSnapshot() {
         var state = PlaybackLifecycleState()
 
