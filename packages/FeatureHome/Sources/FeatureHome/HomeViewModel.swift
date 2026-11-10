@@ -21,12 +21,13 @@ public final class HomeViewModel: ObservableObject {
 
     public init(
         repository: PropertyRepository,
-        playerManager: PlayerManager = .shared
+        playerManager: PlayerManager? = nil
     ) {
+        let manager = playerManager ?? PlayerManager.shared
         self.repository = repository
-        self.playerManager = playerManager
-        self.playbackCoordinator = playerManager.makeFeedPlaybackCoordinator()
-        playerManager.start()
+        self.playerManager = manager
+        self.playbackCoordinator = manager.makeFeedPlaybackCoordinator()
+        manager.start()
     }
 
     public func load() async {
