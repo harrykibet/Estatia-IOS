@@ -95,7 +95,7 @@ final class StreamingCodecNegotiatorTests: XCTestCase {
         XCTAssertEqual(result.headers, source.headers)
     }
 
-    func testNoAdvancedCodecKeepsBackendDefaultRendition() throws {
+    func testNoAdvancedCodecSelectsAndroidH264HighDefault() throws {
         let negotiator = StreamingCodecNegotiator(
             capabilities: StreamCodecCapabilities(
                 supportsAV1: false,
@@ -109,11 +109,13 @@ final class StreamingCodecNegotiatorTests: XCTestCase {
 
         let result = negotiator.negotiate(source)
         let components = try XCTUnwrap(
-            URLComponents(url: result.url, resolvingAgainstBaseURL: false
-            )
+            URLComponents(url: result.url, resolvingAgainstBaseURL: false)
         )
 
-        XCTAssertNil(components.queryItems?.first(where: { $0.name == "codec" }))
+        XCTAssertEqual(
+            components.queryItems?.first(where: { $0.name == "codec" })?.value,
+            "h264_high"
+        )
         XCTAssertNil(result.headers)
     }
 
