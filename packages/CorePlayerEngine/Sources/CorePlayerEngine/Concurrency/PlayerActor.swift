@@ -45,6 +45,10 @@ actor PlayerActor {
     /// A play/pause command changes this value; AVPlayer KVO changes reducer state.
     private var wantsPlayback = false
 
+    /// An OS interruption temporarily pauses the transport while preserving
+    /// wantsPlayback. A user pause during the interruption still clears intent.
+    private var isAudioInterrupted = false
+
     /// Recovery loads defer resumption until the orchestrator validates ownership.
     private var isLoadingForNetworkRecovery = false
     private var recoveryResumeAuthorized = false
@@ -212,6 +216,7 @@ actor PlayerActor {
             // Waiting is meaningful only while playback is desired. A paused
             // player commonly has isPlaybackLikelyToKeepUp == false.
             guard wantsPlayback,
+                  !isAudioInterrupted,
                   reducer.state != .reconnecting,
                   reducer.state != .buffering
             else {
@@ -235,7 +240,7 @@ actor PlayerActor {
             emit(.bufferingStarted)
 
         case .playing:
-            guard wantsPlayback else {
+            guard wantsPlayback, !isAudioInterrupted else {
                 return
             }
 
@@ -261,7 +266,7 @@ actor PlayerActor {
             }
 
         case .paused:
-            guard !wantsPlayback else {
+            guard !wantsPlayback || isAudioInterrupted else {
                 return
             }
 
@@ -360,6 +365,17 @@ actor PlayerActor {
             
         case .play:
 
+            // A user/system play command during an interruption updates the
+            // desired state but cannot restart transport until the interruption
+            // has ended.
+            if isAudioInterrupted {
+                wantsPlayback = true
+                if isLoadingForNetworkRecovery {
+                    recoveryResumeAuthorized = true
+                }
+                return
+            }
+
             if reducer.state == .loading {
                 wantsPlayback = true
                 if isLoadingForNetworkRecovery {
@@ -392,7 +408,41 @@ actor PlayerActor {
             wantsPlayback = false
             recoveryResumeAuthorized = false
             player.pause()
-            
+
+        case .audioInterruptionBegan:
+            // Mark the engine interrupted even when it was already paused:
+            // a play command received during the interruption must be held
+            // until AVAudioSession reports that interruption has ended.
+            isAudioInterrupted = true
+            if wantsPlayback || reducer.state == .playing ||
+                reducer.state == .buffering || reducer.state == .reconnecting {
+                player.pause()
+            }
+
+        case .audioInterruptionEnded(let shouldResume):
+            guard isAudioInterrupted else { return }
+            isAudioInterrupted = false
+
+            guard shouldResume, wantsPlayback else {
+                wantsPlayback = false
+                recoveryResumeAuthorized = false
+                return
+            }
+
+            if reducer.state == .loading {
+                if isLoadingForNetworkRecovery {
+                    recoveryResumeAuthorized = true
+                }
+                return
+            }
+
+            guard reducer.state.isPlayable else { return }
+
+            if reducer.state == .ended {
+                try await player.seek(to: 0)
+            }
+            player.play()
+
         case .seek(let seconds):
             
             guard reducer.state.isSeekable else {
@@ -426,6 +476,7 @@ actor PlayerActor {
             
             await watchdog.cancel()
             wantsPlayback = false
+            isAudioInterrupted = false
             player.stop()
             
             apply(.reset)
@@ -436,6 +487,7 @@ actor PlayerActor {
             
             await watchdog.cancel()
             wantsPlayback = false
+            isAudioInterrupted = false
             player.release()
             
             apply(.released)

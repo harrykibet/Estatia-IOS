@@ -251,6 +251,106 @@ public final class PlaybackOrchestrator {
         }
     }
 
+    // MARK: - System Audio Interruption
+
+    /// Reads the active engine's desired playback intent without inferring it
+    /// from observed transport state (which may already be buffering).
+    public func shouldResumeAfterInterruption(mediaId: String) async -> Bool {
+        let generation = playGeneration
+        guard pendingMediaId == nil,
+              activeMediaId == mediaId,
+              let managed = await pool.get(mediaId: mediaId),
+              managed.mediaId == mediaId
+        else {
+            return false
+        }
+
+        let shouldResume = await managed.engine.shouldResumeAfterInterruption
+        return generation == playGeneration
+            && pendingMediaId == nil
+            && activeMediaId == mediaId
+            && managed.mediaId == mediaId
+            && shouldResume
+    }
+
+    public func pauseForAudioInterruption(mediaId: String) async {
+        let generation = playGeneration
+        guard pendingMediaId == nil,
+              activeMediaId == mediaId,
+              let managed = await pool.get(mediaId: mediaId),
+              managed.mediaId == mediaId
+        else {
+            return
+        }
+
+        try? await managed.perform {
+            guard generation == self.playGeneration,
+                  self.pendingMediaId == nil,
+                  self.activeMediaId == mediaId,
+                  managed.mediaId == mediaId
+            else {
+                return
+            }
+            await managed.engine.pauseForAudioInterruption()
+        }
+    }
+
+    public func resumeFromAudioInterruption(
+        mediaId: String,
+        shouldResume: Bool
+    ) async throws {
+        let generation = playGeneration
+        guard pendingMediaId == nil,
+              activeMediaId == mediaId,
+              let managed = await pool.get(mediaId: mediaId),
+              managed.mediaId == mediaId
+        else {
+            return
+        }
+
+        try requireCurrentGeneration(generation)
+        try await managed.perform {
+            guard generation == self.playGeneration,
+                  self.pendingMediaId == nil,
+                  self.activeMediaId == mediaId,
+                  managed.mediaId == mediaId
+            else {
+                throw CancellationError()
+            }
+            try await managed.engine.resumeFromAudioInterruption(
+                shouldResume: shouldResume
+            )
+        }
+        try requireCurrentGeneration(generation)
+    }
+
+    /// Routes system seek commands through the same per-engine operation
+    /// queue as play, pause, stop and recovery.
+    public func seekCurrent(to seconds: TimeInterval) async throws {
+        guard seconds.isFinite, seconds >= 0 else { return }
+        let generation = playGeneration
+        guard pendingMediaId == nil,
+              let mediaId = activeMediaId,
+              let managed = await pool.get(mediaId: mediaId),
+              managed.mediaId == mediaId
+        else {
+            return
+        }
+
+        try requireCurrentGeneration(generation)
+        try await managed.perform {
+            guard generation == self.playGeneration,
+                  self.pendingMediaId == nil,
+                  self.activeMediaId == mediaId,
+                  managed.mediaId == mediaId
+            else {
+                throw CancellationError()
+            }
+            try await managed.engine.seek(to: seconds)
+        }
+        try requireCurrentGeneration(generation)
+    }
+
     // MARK: - Resume
 
     public func resumeCurrent() async throws {

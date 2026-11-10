@@ -317,4 +317,175 @@ final class PlayerActorTests: XCTestCase {
         try await actor.handle(.release)
     }
 
+    func testAudioInterruptionPausesTransportButPreservesPlaybackIntent() async throws {
+        let transport = FakePlayerTransport()
+        let stateEmitter = PlayerEventEmitter<PlayerState>()
+        let actor = PlayerActor(
+            config: PlayerConfiguration(),
+            player: transport,
+            watchdog: PlaybackWatchdog(),
+            stateEmitter: stateEmitter,
+            eventEmitter: PlayerEventEmitter<PlayerEvent>()
+        )
+        var states = stateEmitter.stream.makeAsyncIterator()
+        let source = MediaSource(
+            url: URL(string: "https://example.com/interruption.mp4")!
+        )
+
+        try await actor.handle(.load(source))
+        _ = await states.next()
+        transport.emitReady()
+        _ = await states.next()
+        try await actor.handle(.play)
+        let intentAfterPlay = await actor.shouldResumeAfterInterruption
+        XCTAssertTrue(intentAfterPlay)
+
+        transport.emitTransportStatus(.playing)
+        let playingState = await states.next()
+        XCTAssertEqual(playingState, .playing)
+
+        try await actor.handle(.audioInterruptionBegan)
+        XCTAssertEqual(transport.pauseCount, 1)
+        let intentDuringInterruption = await actor.shouldResumeAfterInterruption
+        XCTAssertTrue(intentDuringInterruption)
+
+        transport.emitTransportStatus(.paused)
+        let pausedState = await states.next()
+        XCTAssertEqual(pausedState, .paused)
+        let currentPausedState = await actor.currentState
+        XCTAssertEqual(currentPausedState, .paused)
+
+        try await actor.handle(.audioInterruptionEnded(shouldResume: true))
+        XCTAssertEqual(transport.playCount, 2)
+        let intentAfterInterruption = await actor.shouldResumeAfterInterruption
+        XCTAssertTrue(intentAfterInterruption)
+
+        transport.emitTransportStatus(.playing)
+        let resumedState = await states.next()
+        XCTAssertEqual(resumedState, .playing)
+        try await actor.handle(.release)
+    }
+
+    func testExplicitPauseDuringAudioInterruptionCancelsAutomaticResume() async throws {
+        let transport = FakePlayerTransport()
+        let stateEmitter = PlayerEventEmitter<PlayerState>()
+        let actor = PlayerActor(
+            config: PlayerConfiguration(),
+            player: transport,
+            watchdog: PlaybackWatchdog(),
+            stateEmitter: stateEmitter,
+            eventEmitter: PlayerEventEmitter<PlayerEvent>()
+        )
+        var states = stateEmitter.stream.makeAsyncIterator()
+        let source = MediaSource(
+            url: URL(string: "https://example.com/interruption-pause.mp4")!
+        )
+
+        try await actor.handle(.load(source))
+        _ = await states.next()
+        transport.emitReady()
+        _ = await states.next()
+        try await actor.handle(.play)
+        transport.emitTransportStatus(.playing)
+        _ = await states.next()
+
+        try await actor.handle(.audioInterruptionBegan)
+        transport.emitTransportStatus(.paused)
+        let interruptedPausedState = await states.next()
+        XCTAssertEqual(interruptedPausedState, .paused)
+        let resumeIntentDuringInterruption = await actor.shouldResumeAfterInterruption
+        XCTAssertTrue(resumeIntentDuringInterruption)
+
+        // This is a user command, not another system pause. It must replace
+        // the saved resume intent even while the interruption is still active.
+        try await actor.handle(.pause)
+        let intentAfterExplicitPause = await actor.shouldResumeAfterInterruption
+        XCTAssertFalse(intentAfterExplicitPause)
+
+        try await actor.handle(.audioInterruptionEnded(shouldResume: true))
+        XCTAssertEqual(transport.playCount, 1)
+        let intentAfterInterruption = await actor.shouldResumeAfterInterruption
+        XCTAssertFalse(intentAfterInterruption)
+        let finalPausedState = await actor.currentState
+        XCTAssertEqual(finalPausedState, .paused)
+        try await actor.handle(.release)
+    }
+
+    func testAudioInterruptionWithoutSystemResumeClearsPlaybackIntent() async throws {
+        let transport = FakePlayerTransport()
+        let stateEmitter = PlayerEventEmitter<PlayerState>()
+        let actor = PlayerActor(
+            config: PlayerConfiguration(),
+            player: transport,
+            watchdog: PlaybackWatchdog(),
+            stateEmitter: stateEmitter,
+            eventEmitter: PlayerEventEmitter<PlayerEvent>()
+        )
+        var states = stateEmitter.stream.makeAsyncIterator()
+        let source = MediaSource(
+            url: URL(string: "https://example.com/interruption-no-resume.mp4")!
+        )
+
+        try await actor.handle(.load(source))
+        _ = await states.next()
+        transport.emitReady()
+        _ = await states.next()
+        try await actor.handle(.play)
+        transport.emitTransportStatus(.playing)
+        _ = await states.next()
+
+        try await actor.handle(.audioInterruptionBegan)
+        transport.emitTransportStatus(.paused)
+        _ = await states.next()
+
+        try await actor.handle(.audioInterruptionEnded(shouldResume: false))
+
+        XCTAssertEqual(transport.playCount, 1)
+        let intentAfterSystemDeclinedResume = await actor.shouldResumeAfterInterruption
+        XCTAssertFalse(intentAfterSystemDeclinedResume)
+        let finalPausedState = await actor.currentState
+        XCTAssertEqual(finalPausedState, .paused)
+        try await actor.handle(.release)
+    }
+
+    func testPlayRequestedDuringAudioInterruptionIsDeferredUntilItEnds() async throws {
+        let transport = FakePlayerTransport()
+        let stateEmitter = PlayerEventEmitter<PlayerState>()
+        let actor = PlayerActor(
+            config: PlayerConfiguration(),
+            player: transport,
+            watchdog: PlaybackWatchdog(),
+            stateEmitter: stateEmitter,
+            eventEmitter: PlayerEventEmitter<PlayerEvent>()
+        )
+        var states = stateEmitter.stream.makeAsyncIterator()
+        let source = MediaSource(
+            url: URL(string: "https://example.com/interruption-deferred-play.mp4")!
+        )
+
+        try await actor.handle(.load(source))
+        _ = await states.next()
+        transport.emitReady()
+        let readyState = await states.next()
+        XCTAssertEqual(readyState, .ready)
+
+        try await actor.handle(.audioInterruptionBegan)
+        try await actor.handle(.play)
+        XCTAssertEqual(
+            transport.playCount,
+            0,
+            "A play request must not reach AVPlayer while the audio session is interrupted."
+        )
+        let requestedPlaybackIntent = await actor.shouldResumeAfterInterruption
+        XCTAssertTrue(requestedPlaybackIntent)
+
+        try await actor.handle(.audioInterruptionEnded(shouldResume: true))
+        XCTAssertEqual(transport.playCount, 1)
+
+        transport.emitTransportStatus(.playing)
+        let playingState = await states.next()
+        XCTAssertEqual(playingState, .playing)
+        try await actor.handle(.release)
+    }
+
 }

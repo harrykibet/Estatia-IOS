@@ -17,8 +17,20 @@ public final class PlayerManager: VideoPlaybackTarget {
     private let environmentManager = EnvironmentManager()
     private let poolEnvironmentMonitor = PlayerPoolEnvironmentMonitor()
     private let audioSession = AudioSessionManager()
-    private let mediaSessionProvider = MediaSessionProvider()
+    private let mediaSessionCoordinator = MediaSessionCoordinator()
     private let bitrateController = DynamicBitrateController()
+    private var audioSessionObserversInstalled = false
+    private var mediaSessionCommandsInstalled = false
+    private var mediaSessionStateTask: Task<Void, Never>?
+    private var mediaSessionProgressTask: Task<Void, Never>?
+    private var mediaSessionGeneration: UInt64 = 0
+    private var mediaSessionPlaybackState: PlayerState = .idle
+    private var audioInterruptionActive = false
+    private var pendingAudioInterruption: PendingAudioInterruption?
+
+    private struct PendingAudioInterruption {
+        let mediaId: String
+    }
     private var bitrateTask: Task<Void, Never>?
     private var monitoredBitrateEngine: (any AVPlayerProviding)?
     private var monitoredBitrateContentType: PlaybackContentType?
@@ -114,7 +126,8 @@ public final class PlayerManager: VideoPlaybackTarget {
             self?.applyCurrentBitratePolicy()
         }
         networkRecovery.start()
-        
+        installSystemPlaybackIntegrationIfNeeded()
+
         environmentManager.start(
             onAppBackgrounded: { [weak self] in
                 Task { @MainActor [weak self] in
@@ -191,16 +204,13 @@ public final class PlayerManager: VideoPlaybackTarget {
         onEngineReady: (@MainActor @Sendable (any PlayerEngine) async -> Void)? = nil
     ) async throws {
         
-        // A new explicit play request supersedes any pending lifecycle resume.
+        // A new explicit play request supersedes pending lifecycle intent.
         let lifecycleGeneration = lifecycleState.invalidateForExplicitCommand()
-        mediaSessionProvider.configureNowPlaying(
-            title: title,
-            artist: artist
-        )
-        
+        installSystemPlaybackIntegrationIfNeeded()
         audioSession.request()
-        
-        try await orchestrator.playWithEngineReady(
+
+        do {
+            try await orchestrator.playWithEngineReady(
             mediaId: mediaId,
             source: source,
             onEngineReady: { [weak self] engine in
@@ -209,11 +219,22 @@ public final class PlayerManager: VideoPlaybackTarget {
                 // continues in the background of this call.
                 self?.activeMediaId = mediaId
                 self?.activeContentType = contentType
+                await self?.startMediaSessionObservation(
+                    mediaId: mediaId,
+                    title: title,
+                    artist: artist
+                )
                 if let engine {
                     await onEngineReady?(engine)
                 }
             }
-        )
+            )
+        } catch {
+            if lifecycleState.isCurrent(lifecycleGeneration) {
+                audioSession.abandon()
+            }
+            throw error
+        }
 
         guard lifecycleState.isCurrent(lifecycleGeneration) else {
             throw CancellationError()
@@ -222,6 +243,14 @@ public final class PlayerManager: VideoPlaybackTarget {
         activeMediaId = orchestrator.activeMediaId
         guard activeMediaId == mediaId else { return }
         activeContentType = contentType
+
+        if audioInterruptionActive {
+            await suspendNewPlaybackDuringAudioInterruption(
+                mediaId: mediaId,
+                lifecycleGeneration: lifecycleGeneration
+            )
+        }
+
         await startBitrateMonitoring(
             mediaId: mediaId,
             contentType: contentType,
@@ -323,15 +352,7 @@ public final class PlayerManager: VideoPlaybackTarget {
         lifecycleGeneration: UInt64
     ) async {
 
-        bitrateMonitoringGeneration &+= 1
-        bitrateTask?.cancel()
-        bitrateTask = nil
-        if let monitoredBitrateEngine {
-            bitrateController.reset(for: monitoredBitrateEngine)
-            self.monitoredBitrateEngine = nil
-        }
-        monitoredBitrateContentType = nil
-        latestBitrateProgress = nil
+        stopBitrateMonitoring()
         await orchestrator.pauseCurrent()
 
         // A newer play, pause, or foreground transition may have claimed the
@@ -362,6 +383,337 @@ public final class PlayerManager: VideoPlaybackTarget {
     
     public func playerEngine(for mediaId: String) async -> (any PlayerEngine)? {
         await orchestrator.playerEngine(for: mediaId)
+    }
+
+    private func installSystemPlaybackIntegrationIfNeeded() {
+        if !mediaSessionCommandsInstalled {
+            mediaSessionCoordinator.installCommands(
+                onPlay: { [weak self] in
+                    guard let self, let mediaId = self.activeMediaId else {
+                        return .unavailable
+                    }
+                    Task { @MainActor [weak self] in
+                        await self?.resumeFromRemoteCommand(mediaId: mediaId)
+                    }
+                    return .success
+                },
+                onPause: { [weak self] in
+                    guard let self, self.activeMediaId != nil else {
+                        return .unavailable
+                    }
+                    Task { @MainActor [weak self] in
+                        await self?.pause()
+                    }
+                    return .success
+                },
+                onTogglePlayback: { [weak self] in
+                    guard let self, let mediaId = self.activeMediaId else {
+                        return .unavailable
+                    }
+                    Task { @MainActor [weak self] in
+                        await self?.toggleFromRemoteCommand(mediaId: mediaId)
+                    }
+                    return .success
+                },
+                onSeek: { [weak self] seconds in
+                    guard let self,
+                          self.activeMediaId != nil,
+                          seconds.isFinite,
+                          seconds >= 0
+                    else {
+                        return .unavailable
+                    }
+                    Task { @MainActor [weak self] in
+                        await self?.seekFromRemoteCommand(to: seconds)
+                    }
+                    return .success
+                }
+            )
+            mediaSessionCommandsInstalled = true
+        }
+
+        guard !audioSessionObserversInstalled else { return }
+        audioSession.startObserving(
+            onInterruptionBegan: { [weak self] in
+                Task { @MainActor [weak self] in
+                    await self?.handleAudioInterruptionBegan()
+                }
+            },
+            onInterruptionEnded: { [weak self] shouldResume in
+                Task { @MainActor [weak self] in
+                    await self?.handleAudioInterruptionEnded(
+                        shouldResume: shouldResume
+                    )
+                }
+            },
+            onRouteBecameNoisy: { [weak self] in
+                Task { @MainActor [weak self] in
+                    await self?.pause()
+                }
+            }
+        )
+        audioSessionObserversInstalled = true
+    }
+
+    private func resumeFromRemoteCommand(mediaId: String) async {
+        guard activeMediaId == mediaId else { return }
+        let generation = lifecycleState.invalidateForExplicitCommand()
+
+        do {
+            try await orchestrator.resumeCurrent()
+            guard lifecycleState.isCurrent(generation),
+                  activeMediaId == mediaId
+            else {
+                return
+            }
+
+            if audioInterruptionActive {
+                // PlayerActor records the explicit play intent but keeps its
+                // transport suspended until the system interruption ends.
+                return
+            }
+
+            audioSession.request()
+            await startBitrateMonitoring(
+                mediaId: mediaId,
+                contentType: activeContentType,
+                lifecycleGeneration: generation
+            )
+        } catch {
+            guard lifecycleState.isCurrent(generation),
+                  activeMediaId == mediaId
+            else {
+                return
+            }
+            audioSession.abandon()
+        }
+    }
+
+    private func toggleFromRemoteCommand(mediaId: String) async {
+        guard activeMediaId == mediaId,
+              let state = await orchestrator.currentState(mediaId: mediaId),
+              activeMediaId == mediaId
+        else {
+            return
+        }
+
+        switch state {
+        case .playing, .buffering, .reconnecting:
+            await pause()
+        default:
+            await resumeFromRemoteCommand(mediaId: mediaId)
+        }
+    }
+
+    private func seekFromRemoteCommand(to seconds: TimeInterval) async {
+        guard let mediaId = activeMediaId else { return }
+        do {
+            try await orchestrator.seekCurrent(to: seconds)
+            guard activeMediaId == mediaId,
+                  let engine = await orchestrator.playerEngine(for: mediaId),
+                  activeMediaId == mediaId
+            else {
+                return
+            }
+            let state = await engine.currentState
+            mediaSessionCoordinator.updatePlayback(
+                state: state,
+                currentTime: await engine.currentTime,
+                duration: await engine.duration
+            )
+        } catch {
+            NSLog("[PlayerManager] Remote seek failed: %@", String(describing: error))
+        }
+    }
+
+    private func handleAudioInterruptionBegan() async {
+        guard !audioInterruptionActive else { return }
+        audioInterruptionActive = true
+
+        guard let mediaId = activeMediaId else {
+            pendingAudioInterruption = nil
+            return
+        }
+
+        guard activeMediaId == mediaId else { return }
+
+        pendingAudioInterruption = PendingAudioInterruption(mediaId: mediaId)
+        stopBitrateMonitoring()
+        await orchestrator.pauseForAudioInterruption(mediaId: mediaId)
+    }
+
+    private func suspendNewPlaybackDuringAudioInterruption(
+        mediaId: String,
+        lifecycleGeneration: UInt64
+    ) async {
+        guard lifecycleState.isCurrent(lifecycleGeneration),
+              activeMediaId == mediaId,
+              audioInterruptionActive
+        else {
+            return
+        }
+
+        pendingAudioInterruption = PendingAudioInterruption(mediaId: mediaId)
+        await orchestrator.pauseForAudioInterruption(mediaId: mediaId)
+    }
+
+    private func handleAudioInterruptionEnded(shouldResume systemAllowsResume: Bool) async {
+        guard audioInterruptionActive else { return }
+        audioInterruptionActive = false
+
+        guard let interruption = pendingAudioInterruption else { return }
+        pendingAudioInterruption = nil
+
+        guard activeMediaId == interruption.mediaId else { return }
+
+        // PlayerActor keeps desired playback separate from observed transport
+        // state. Reading it here respects user play/pause commands issued
+        // directly by the player UI while the system owned audio.
+        let currentIntent = await orchestrator.shouldResumeAfterInterruption(
+            mediaId: interruption.mediaId
+        )
+        guard activeMediaId == interruption.mediaId else { return }
+
+        // PlayerEngine preserves desired playback intent while interrupted.
+        // A pause issued directly by the player UI must cancel auto-resume.
+        let shouldResume = systemAllowsResume && currentIntent
+
+        do {
+            // AVAudioSession must be active before the engine resumes its
+            // transport, otherwise the first playback command can be dropped.
+            if shouldResume {
+                audioSession.request()
+            }
+
+            try await orchestrator.resumeFromAudioInterruption(
+                mediaId: interruption.mediaId,
+                shouldResume: shouldResume
+            )
+            guard activeMediaId == interruption.mediaId else { return }
+
+            if shouldResume {
+                let generation = lifecycleState.generation
+                await startBitrateMonitoring(
+                    mediaId: interruption.mediaId,
+                    contentType: activeContentType,
+                    lifecycleGeneration: generation
+                )
+            } else {
+                audioSession.abandon()
+            }
+        } catch {
+            audioSession.abandon()
+            NSLog("[PlayerManager] Audio-interruption recovery failed: %@", String(describing: error))
+        }
+    }
+
+    private func stopBitrateMonitoring() {
+        bitrateMonitoringGeneration &+= 1
+        bitrateTask?.cancel()
+        bitrateTask = nil
+        if let monitoredBitrateEngine {
+            bitrateController.reset(for: monitoredBitrateEngine)
+            self.monitoredBitrateEngine = nil
+        }
+        monitoredBitrateContentType = nil
+        latestBitrateProgress = nil
+    }
+
+    private func startMediaSessionObservation(
+        mediaId: String,
+        title: String?,
+        artist: String?
+    ) async {
+        mediaSessionGeneration &+= 1
+        let generation = mediaSessionGeneration
+        mediaSessionStateTask?.cancel()
+        mediaSessionProgressTask?.cancel()
+        mediaSessionStateTask = nil
+        mediaSessionProgressTask = nil
+
+        guard let engine = await orchestrator.playerEngine(for: mediaId),
+              activeMediaId == mediaId,
+              generation == mediaSessionGeneration
+        else {
+            return
+        }
+
+        // Create both multicast subscriptions before taking the snapshot so
+        // a transition racing with the initial read remains observable.
+        let states = engine.state
+        let events = engine.events
+        let initialState = await engine.currentState
+        let initialTime = await engine.currentTime
+        let initialDuration = await engine.duration
+
+        guard activeMediaId == mediaId,
+              generation == mediaSessionGeneration
+        else {
+            return
+        }
+
+        mediaSessionPlaybackState = initialState
+        mediaSessionCoordinator.activate(
+            title: title,
+            artist: artist,
+            state: initialState,
+            currentTime: initialTime,
+            duration: initialDuration
+        )
+
+        mediaSessionStateTask = Task { @MainActor [weak self, engine] in
+            for await state in states {
+                guard !Task.isCancelled,
+                      let self,
+                      self.mediaSessionGeneration == generation,
+                      self.activeMediaId == mediaId
+                else {
+                    return
+                }
+
+                self.mediaSessionPlaybackState = state
+                let currentTime = await engine.currentTime
+                let duration = await engine.duration
+                guard self.mediaSessionGeneration == generation,
+                      self.activeMediaId == mediaId
+                else {
+                    return
+                }
+                self.mediaSessionCoordinator.updatePlayback(
+                    state: state,
+                    currentTime: currentTime,
+                    duration: duration
+                )
+            }
+        }
+
+        mediaSessionProgressTask = Task { @MainActor [weak self] in
+            for await event in events {
+                guard !Task.isCancelled,
+                      let self,
+                      self.mediaSessionGeneration == generation,
+                      self.activeMediaId == mediaId
+                else {
+                    return
+                }
+
+                guard case let .progress(progress) = event else { continue }
+                self.mediaSessionCoordinator.updateProgress(
+                    currentTime: progress.currentTime,
+                    duration: progress.duration
+                )
+            }
+        }
+    }
+
+    private func stopMediaSessionObservation() {
+        mediaSessionGeneration &+= 1
+        mediaSessionStateTask?.cancel()
+        mediaSessionProgressTask?.cancel()
+        mediaSessionStateTask = nil
+        mediaSessionProgressTask = nil
+        mediaSessionPlaybackState = .idle
+        mediaSessionCoordinator.clear()
     }
 
     private func startBitrateMonitoring(
@@ -526,7 +878,13 @@ public final class PlayerManager: VideoPlaybackTarget {
         latestBitrateProgress = nil
         bitrateController.resetAll()
 
+        stopBitrateMonitoring()
+        stopMediaSessionObservation()
+        pendingAudioInterruption = nil
+        audioInterruptionActive = false
         audioSession.cleanup()
+        audioSessionObserversInstalled = false
+        mediaSessionCommandsInstalled = false
         
         await orchestrator.shutdown()
         
