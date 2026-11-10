@@ -30,8 +30,8 @@ public struct HomeView: View {
                         description: Text("New listings will appear here.")
                     )
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 18) {
+                    ScrollView(.vertical) {
+                        LazyVStack(spacing: 0) {
                             ForEach(Array(viewModel.properties.enumerated()), id: \.offset) { entry in
                                 let index = entry.offset
                                 HomePropertyFeedCard(
@@ -42,11 +42,13 @@ public struct HomeView: View {
                                     next: Array(viewModel.properties.dropFirst(index + 1).prefix(2)),
                                     viewModel: viewModel
                                 )
-                                .padding(.horizontal, 16)
+                                .containerRelativeFrame(.vertical)
                             }
                         }
-                        .padding(.vertical, 12)
+                        .scrollTargetLayout()
                     }
+                    .scrollTargetBehavior(.paging)
+                    .scrollIndicators(.hidden)
                     .refreshable {
                         await viewModel.load()
                     }
@@ -72,6 +74,7 @@ private struct HomePropertyFeedCard: View {
 
     @State private var isVisible = false
     @State private var engine: (any PlayerEngine)?
+    @State private var engineLoadFailed = false
 
     private var videoItem: FeedPlaybackItem? {
         HomeViewModel.playbackItem(for: property)
@@ -82,78 +85,87 @@ private struct HomePropertyFeedCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.black.opacity(0.08))
+        ZStack(alignment: .bottomLeading) {
+            Color.black
 
-                if videoItem != nil {
-                    if let engine {
-                        EngineVideoPlayer(
-                            engine: engine,
-                            title: property.title,
-                            isMuted: viewModel.isMuted,
-                            onMuteToggle: viewModel.toggleMute
-                        )
-                    } else {
-                        ProgressView()
-                            .tint(.secondary)
-                    }
-                } else if let firstImageURL {
-                    AsyncImage(url: firstImageURL) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().scaledToFill()
-                        case .failure:
-                            Image(systemName: "house")
-                                .font(.largeTitle)
-                                .foregroundStyle(.secondary)
-                        case .empty:
-                            ProgressView()
-                        @unknown default:
-                            Color.gray.opacity(0.15)
-                        }
-                    }
+            if videoItem != nil {
+                if let engine {
+                    EngineVideoPlayer(
+                        engine: engine,
+                        title: property.title,
+                        isMuted: viewModel.isMuted,
+                        onMuteToggle: viewModel.toggleMute
+                    )
+                } else if engineLoadFailed {
+                    ContentUnavailableView(
+                        "Video unavailable",
+                        systemImage: "video.slash",
+                        description: Text("This listing's video could not be prepared.")
+                    )
+                    .foregroundStyle(.white)
                 } else {
-                    Image(systemName: "house")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
+                    ProgressView()
+                        .tint(.white)
                 }
+            } else if let firstImageURL {
+                AsyncImage(url: firstImageURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    case .failure:
+                        Image(systemName: "house")
+                            .font(.largeTitle)
+                            .foregroundStyle(.white.opacity(0.8))
+                    case .empty:
+                        ProgressView().tint(.white)
+                    @unknown default:
+                        Color.black
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+            } else {
+                Image(systemName: "house")
+                    .font(.largeTitle)
+                    .foregroundStyle(.white.opacity(0.8))
             }
-            .frame(height: 340)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
 
-            VStack(alignment: .leading, spacing: 6) {
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.18), .black.opacity(0.82)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+            .allowsHitTesting(false)
+
+            VStack(alignment: .leading, spacing: 8) {
                 Text(property.title ?? "Untitled property")
-                    .font(.headline)
+                    .font(.title3.weight(.bold))
                     .lineLimit(2)
 
                 if let county = property.county, !county.isEmpty {
                     Text(county)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
                 }
 
                 if let price = property.price {
                     Text(price, format: .currency(code: "KES").precision(.fractionLength(0)))
-                        .font(.subheadline.weight(.semibold))
+                        .font(.headline)
                 }
 
                 if let description = property.description, !description.isEmpty {
                     Text(description)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
                         .lineLimit(3)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(.white)
+            .padding(.leading, 20)
+            .padding(.trailing, 92)
+            .padding(.bottom, 138)
+            .allowsHitTesting(false)
         }
-        .padding(12)
-        .background(.background, in: RoundedRectangle(cornerRadius: 20))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.black)
         .onScrollVisibilityChange(threshold: 0.1) { visible in
             viewModel.setComposed(property, isComposed: visible)
         }
@@ -170,12 +182,19 @@ private struct HomePropertyFeedCard: View {
         .task(id: isVisible) {
             guard isVisible, videoItem != nil else {
                 engine = nil
+                engineLoadFailed = false
                 return
             }
+
             do {
-                engine = try await viewModel.playerEngine(for: property)
+                let preparedEngine = try await viewModel.playerEngine(for: property)
+                guard !Task.isCancelled else { return }
+                engine = preparedEngine
+                engineLoadFailed = false
             } catch {
+                guard !Task.isCancelled else { return }
                 engine = nil
+                engineLoadFailed = true
             }
         }
         .onDisappear {
