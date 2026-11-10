@@ -251,6 +251,22 @@ final class PlaybackOrchestratorTests: XCTestCase {
         )
     }
 
+    func testPlayerEngineLookupReturnsOnlyTheManagedMediaIdentity() async throws {
+        let (orchestrator, _, enginesProvider) = makeOrchestrator()
+
+        try await orchestrator.play(
+            mediaId: "visible",
+            source: makeSource("visible")
+        )
+
+        let engine = await orchestrator.playerEngine(for: "visible")
+        let managedEngine = try XCTUnwrap(engine)
+        XCTAssertTrue(managedEngine === enginesProvider()[0])
+
+        let missingEngine = await orchestrator.playerEngine(for: "missing")
+        XCTAssertNil(missingEngine)
+    }
+
     // MARK: - Per-Player Command Ordering
 
     func testStopAndReplayOnSamePlayerAreSerialized() async throws {
