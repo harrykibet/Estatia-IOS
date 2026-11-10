@@ -542,12 +542,15 @@ final class VideoPlaybackCoordinatorTests: XCTestCase {
             next: [next]
         )
 
+        // The first visible play may legitimately be cancelled when the
+        // second visibility event supersedes it. Synchronize on the second
+        // preload reaching the playback stub instead of requiring both play
+        // requests to finish, then verify the same media was warmed only once.
         await waitUntil {
-            playback.playRequests.count == 2
+            playback.playRequests.contains("current-2")
+                && playback.preloadRequests.count == 2
+                && streaming.warmCalls.count == 1
         }
-
-        await Task.yield()
-        await Task.yield()
 
         XCTAssertEqual(
             streaming.warmCalls.count,
