@@ -109,10 +109,9 @@ final class MediaSessionProvider: MediaSessionProviding {
         }
         commandTargets.removeAll(keepingCapacity: false)
 
-        commandCenter.playCommand.isEnabled = false
-        commandCenter.pauseCommand.isEnabled = false
-        commandCenter.togglePlayPauseCommand.isEnabled = false
-        commandCenter.changePlaybackPositionCommand.isEnabled = false
+        // MPRemoteCommandCenter is process-wide. Do not disable shared
+        // commands during teardown because another audio owner may have
+        // installed its own handlers on the same command center.
     }
 
     private static func performOnMainActor(
