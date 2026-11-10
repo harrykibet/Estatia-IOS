@@ -292,6 +292,7 @@ public struct EngineVideoPlayer: View {
     private let isMuted: Bool?
     private let onMuteToggle: (() -> Void)?
     private let onLike: (() -> Void)?
+    private let onPictureInPictureChanged: ((Bool) -> Void)?
 
     /// - Parameters:
     ///   - engine: The player engine that owns playback and seeking.
@@ -305,20 +306,33 @@ public struct EngineVideoPlayer: View {
         title: String? = nil,
         isMuted: Bool? = nil,
         onMuteToggle: (() -> Void)? = nil,
-        onLike: (() -> Void)? = nil
+        onLike: (() -> Void)? = nil,
+        onPictureInPictureChanged: ((Bool) -> Void)? = nil
     ) {
         _model = StateObject(wrappedValue: PlayerViewModel(engine: engine))
         self.title = title
         self.isMuted = isMuted
         self.onMuteToggle = onMuteToggle
         self.onLike = onLike
+        self.onPictureInPictureChanged = onPictureInPictureChanged
     }
 
     public var body: some View {
         ZStack {
             if let player = model.presentationPlayer {
+#if os(iOS)
+                PlayerPictureInPictureSurface(
+                    player: player,
+                    shouldAutoStartPictureInPicture: model.state == .playing,
+                    onPictureInPictureChanged: { isActive in
+                        onPictureInPictureChanged?(isActive)
+                    }
+                )
+                .allowsHitTesting(false)
+#else
                 VideoPlayer(player: player)
                     .allowsHitTesting(false)
+#endif
             } else {
                 Color.black
             }

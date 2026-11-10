@@ -46,6 +46,12 @@ public final class HomeFeedPlaybackController: ObservableObject {
         isMuted.toggle()
     }
 
+    /// Keeps the shared player active in the background only while AVKit
+    /// reports that its managed video is in Picture in Picture.
+    public func setPictureInPictureActive(_ isActive: Bool) {
+        playerManager.setPictureInPictureActive(isActive)
+    }
+
     /// Tracks media whose feed cells are currently composed. Pinning these IDs
     /// prevents the shared pool from recycling their engine while SwiftUI still
     /// holds a player view for the corresponding cell.
