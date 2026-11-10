@@ -337,25 +337,32 @@ final class PlayerActorTests: XCTestCase {
         transport.emitReady()
         _ = await states.next()
         try await actor.handle(.play)
-        XCTAssertTrue(await actor.shouldResumeAfterInterruption)
+        let intentAfterPlay = await actor.shouldResumeAfterInterruption
+        XCTAssertTrue(intentAfterPlay)
 
         transport.emitTransportStatus(.playing)
-        XCTAssertEqual(await states.next(), .playing)
+        let playingState = await states.next()
+        XCTAssertEqual(playingState, .playing)
 
         try await actor.handle(.audioInterruptionBegan)
         XCTAssertEqual(transport.pauseCount, 1)
-        XCTAssertTrue(await actor.shouldResumeAfterInterruption)
+        let intentDuringInterruption = await actor.shouldResumeAfterInterruption
+        XCTAssertTrue(intentDuringInterruption)
 
         transport.emitTransportStatus(.paused)
-        XCTAssertEqual(await states.next(), .paused)
-        XCTAssertEqual(await actor.currentState, .paused)
+        let pausedState = await states.next()
+        XCTAssertEqual(pausedState, .paused)
+        let currentPausedState = await actor.currentState
+        XCTAssertEqual(currentPausedState, .paused)
 
         try await actor.handle(.audioInterruptionEnded(shouldResume: true))
         XCTAssertEqual(transport.playCount, 2)
-        XCTAssertTrue(await actor.shouldResumeAfterInterruption)
+        let intentAfterInterruption = await actor.shouldResumeAfterInterruption
+        XCTAssertTrue(intentAfterInterruption)
 
         transport.emitTransportStatus(.playing)
-        XCTAssertEqual(await states.next(), .playing)
+        let resumedState = await states.next()
+        XCTAssertEqual(resumedState, .playing)
         try await actor.handle(.release)
     }
 
@@ -384,18 +391,23 @@ final class PlayerActorTests: XCTestCase {
 
         try await actor.handle(.audioInterruptionBegan)
         transport.emitTransportStatus(.paused)
-        XCTAssertEqual(await states.next(), .paused)
-        XCTAssertTrue(await actor.shouldResumeAfterInterruption)
+        let interruptedPausedState = await states.next()
+        XCTAssertEqual(interruptedPausedState, .paused)
+        let resumeIntentDuringInterruption = await actor.shouldResumeAfterInterruption
+        XCTAssertTrue(resumeIntentDuringInterruption)
 
         // This is a user command, not another system pause. It must replace
         // the saved resume intent even while the interruption is still active.
         try await actor.handle(.pause)
-        XCTAssertFalse(await actor.shouldResumeAfterInterruption)
+        let intentAfterExplicitPause = await actor.shouldResumeAfterInterruption
+        XCTAssertFalse(intentAfterExplicitPause)
 
         try await actor.handle(.audioInterruptionEnded(shouldResume: true))
         XCTAssertEqual(transport.playCount, 1)
-        XCTAssertFalse(await actor.shouldResumeAfterInterruption)
-        XCTAssertEqual(await actor.currentState, .paused)
+        let intentAfterInterruption = await actor.shouldResumeAfterInterruption
+        XCTAssertFalse(intentAfterInterruption)
+        let finalPausedState = await actor.currentState
+        XCTAssertEqual(finalPausedState, .paused)
         try await actor.handle(.release)
     }
 
@@ -429,8 +441,10 @@ final class PlayerActorTests: XCTestCase {
         try await actor.handle(.audioInterruptionEnded(shouldResume: false))
 
         XCTAssertEqual(transport.playCount, 1)
-        XCTAssertFalse(await actor.shouldResumeAfterInterruption)
-        XCTAssertEqual(await actor.currentState, .paused)
+        let intentAfterSystemDeclinedResume = await actor.shouldResumeAfterInterruption
+        XCTAssertFalse(intentAfterSystemDeclinedResume)
+        let finalPausedState = await actor.currentState
+        XCTAssertEqual(finalPausedState, .paused)
         try await actor.handle(.release)
     }
 
