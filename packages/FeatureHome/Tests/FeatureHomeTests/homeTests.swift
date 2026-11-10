@@ -68,6 +68,7 @@ import CoreModel
       "directVideoUrls": ["https://cdn.example.test/direct.mp4"],
       "hlsUrl": ["https://cdn.example.test/android-stream.m3u8"],
       "video": true,
+      "matchScore": 0.93,
       "createdAt": 1730000000000,
       "active": true,
       "available": true
@@ -79,6 +80,7 @@ import CoreModel
 
     #expect(property.videoUrl.isEmpty)
     #expect(item?.mediaId == "android-property-46")
+    #expect(item?.matchScore == 0.93)
     #expect(item?.source.url.absoluteString == "https://cdn.example.test/android-stream.m3u8")
     #expect(property.createdAt != nil)
 }
