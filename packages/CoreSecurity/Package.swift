@@ -5,7 +5,7 @@ let package = Package(
     name: "CoreSecurity",
     platforms: [
         .iOS(.v18),
-        .macOS(.v13)
+        .macOS(.v10_15)
     ],
     products: [
         .library(
