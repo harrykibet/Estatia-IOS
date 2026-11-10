@@ -93,10 +93,10 @@ public struct PropertyModel: Codable, Identifiable {
         latitude = try container.decodeIfPresent(Double.self, forKey: .latitude)
         longitude = try container.decodeIfPresent(Double.self, forKey: .longitude)
 
-        if let decodedDate = try? container.decodeIfPresent(Date.self, forKey: .createdAt) {
-            createdAt = decodedDate
-        } else if let milliseconds = try? container.decode(Int64.self, forKey: .createdAt) {
+        if let milliseconds = try? container.decode(Int64.self, forKey: .createdAt) {
             createdAt = Date(timeIntervalSince1970: Double(milliseconds) / 1_000)
+        } else if let decodedDate = try? container.decode(Date.self, forKey: .createdAt) {
+            createdAt = decodedDate
         } else {
             createdAt = nil
         }
