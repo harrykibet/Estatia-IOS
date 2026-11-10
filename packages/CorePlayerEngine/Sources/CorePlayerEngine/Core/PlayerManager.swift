@@ -26,6 +26,7 @@ public final class PlayerManager: VideoPlaybackTarget {
     private var mediaSessionGeneration: UInt64 = 0
     private var mediaSessionPlaybackState: PlayerState = .idle
     private var audioInterruptionActive = false
+    private var isPictureInPictureActive = false
     private var pendingAudioInterruption: PendingAudioInterruption?
 
     private struct PendingAudioInterruption {
@@ -111,6 +112,13 @@ public final class PlayerManager: VideoPlaybackTarget {
         )
     }
     
+    /// Called by the presentation layer when AVKit starts or stops PiP.
+    /// A background transition may retain playback only while this flag and
+    /// the engine's observed playing state are both true.
+    public func setPictureInPictureActive(_ isActive: Bool) {
+        isPictureInPictureActive = isActive
+    }
+
     public func start() {
         guard !hasStarted else { return }
         hasStarted = true
@@ -291,6 +299,16 @@ public final class PlayerManager: VideoPlaybackTarget {
               ),
               activeMediaId == mediaId
         else {
+            return
+        }
+
+        // PiP is the one supported video-playback exception to the normal
+        // background pause policy. Keep the current AVPlayer and audio session
+        // alive only if playback was already active when the app backgrounded.
+        guard !BackgroundPlaybackPolicy.shouldKeepPlaybackActive(
+            wasPlaying: wasPlaying,
+            isPictureInPictureActive: isPictureInPictureActive
+        ) else {
             return
         }
 
@@ -882,6 +900,7 @@ public final class PlayerManager: VideoPlaybackTarget {
         stopMediaSessionObservation()
         pendingAudioInterruption = nil
         audioInterruptionActive = false
+        isPictureInPictureActive = false
         audioSession.cleanup()
         audioSessionObserversInstalled = false
         mediaSessionCommandsInstalled = false
