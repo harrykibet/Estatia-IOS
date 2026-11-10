@@ -40,6 +40,11 @@ public final class VideoPlaybackCoordinator {
     private let now:
         @Sendable () -> ContinuousClock.Instant
 
+    /// Invoked after the debounced visible item has successfully acquired
+    /// playback ownership. Hosts can then bind their native player surface.
+    private let onPlaybackReady:
+        @MainActor @Sendable (String) async -> Void
+
     // MARK: - Tasks
 
     private var playTask:
@@ -81,13 +86,15 @@ public final class VideoPlaybackCoordinator {
         },
         now: @escaping @Sendable () -> ContinuousClock.Instant = {
             ContinuousClock.now
-        }
+        },
+        onPlaybackReady: @escaping @MainActor @Sendable (String) async -> Void = { _ in }
     ) {
         self.playback = playback
         self.streamingPipeline = streamingPipeline
         self.policy = policy
         self.sleep = sleep
         self.now = now
+        self.onPlaybackReady = onPlaybackReady
     }
     
     private func isFlinging(
@@ -216,6 +223,12 @@ public final class VideoPlaybackCoordinator {
             mediaId: item.mediaId,
             source: item.source
         )
+
+        guard isCurrentVisibility(generation) else {
+            throw CancellationError()
+        }
+
+        await onPlaybackReady(item.mediaId)
 
         guard isCurrentVisibility(generation) else {
             throw CancellationError()
@@ -376,6 +389,12 @@ public final class VideoPlaybackCoordinator {
         playback.isMediaActive(
             mediaId
         )
+    }
+
+    /// Returns the existing managed engine for a feed item, if it has been
+    /// acquired and has not been recycled by the player pool.
+    public func playerEngine(for mediaId: String) async -> (any PlayerEngine)? {
+        await playback.playerEngine(for: mediaId)
     }
 
     // MARK: - Retry
