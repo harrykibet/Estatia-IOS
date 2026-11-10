@@ -599,11 +599,10 @@ public final class PlayerManager: VideoPlaybackTarget {
         )
         guard activeMediaId == interruption.mediaId else { return }
 
-        let intentUnchanged = lifecycleState.isCurrent(
-            interruption.lifecycleGeneration
-        )
-        let shouldResume = systemAllowsResume
-            && (intentUnchanged ? interruption.shouldResume : currentIntent)
+        // PlayerEngine preserves desired playback intent while interrupted.
+        // Read it at interruption end so a pause issued directly by the player
+        // UI (without going through PlayerManager) still cancels auto-resume.
+        let shouldResume = systemAllowsResume && currentIntent
 
         do {
             try await orchestrator.resumeFromAudioInterruption(
@@ -639,8 +638,6 @@ public final class PlayerManager: VideoPlaybackTarget {
         }
         monitoredBitrateContentType = nil
         latestBitrateProgress = nil
-        _ = lowBandwidthDetector.reset()
-        isSustainedLowBandwidth = false
     }
 
     private func startMediaSessionObservation(
