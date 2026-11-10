@@ -29,11 +29,11 @@ public struct StreamCodecCapabilities: Sendable, Equatable {
         .joined(separator: ",")
     }
 
-    /// Mirrors Android's AV1-first, then HEVC manifest selection.
-    public var preferredCodec: String? {
+    /// Mirrors Android's AV1-first, then HEVC, then H.264 High selection.
+    public var preferredCodec: String {
         if supportsAV1 { return "av1" }
         if supportsHEVC { return "hevc" }
-        return nil
+        return "h264_high"
     }
 
     /// Conservatively advertises only codecs VideoToolbox confirms can be
@@ -86,11 +86,10 @@ public struct StreamingCodecNegotiator: Sendable {
         }
 
         var resolvedURL = source.url
-        if let preferredCodec = capabilities.preferredCodec,
-           var components = URLComponents(
-               url: source.url,
-               resolvingAgainstBaseURL: false
-           ) {
+        if var components = URLComponents(
+            url: source.url,
+            resolvingAgainstBaseURL: false
+        ) {
             let hasExplicitCodec = components.queryItems?.contains {
                 $0.name.caseInsensitiveCompare("codec") == .orderedSame
             } ?? false
@@ -98,7 +97,7 @@ public struct StreamingCodecNegotiator: Sendable {
             if !hasExplicitCodec {
                 var queryItems = components.queryItems ?? []
                 queryItems.append(
-                    URLQueryItem(name: "codec", value: preferredCodec)
+                    URLQueryItem(name: "codec", value: capabilities.preferredCodec)
                 )
                 components.queryItems = queryItems
                 resolvedURL = components.url ?? source.url
