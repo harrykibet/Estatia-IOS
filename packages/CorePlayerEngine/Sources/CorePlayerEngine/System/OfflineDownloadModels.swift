@@ -29,6 +29,7 @@ public struct OfflineDownloadRecord: Codable, Sendable, Equatable, Identifiable 
 
     // A one-way digest avoids persisting signed source URLs and query tokens.
     let sourceFingerprint: String
+    let taskToken: String
 
     public var id: String { mediaId }
 
@@ -43,7 +44,8 @@ public struct OfflineDownloadRecord: Codable, Sendable, Equatable, Identifiable 
         localURL: URL?,
         failureReason: String?,
         updatedAt: Date,
-        sourceFingerprint: String
+        sourceFingerprint: String,
+        taskToken: String
     ) {
         self.mediaId = mediaId
         self.kind = kind
@@ -56,6 +58,7 @@ public struct OfflineDownloadRecord: Codable, Sendable, Equatable, Identifiable 
         self.failureReason = failureReason
         self.updatedAt = updatedAt
         self.sourceFingerprint = sourceFingerprint
+        self.taskToken = taskToken
     }
 }
 
@@ -93,7 +96,8 @@ extension OfflineDownloadRecord {
             localURL: localURL ?? self.localURL,
             failureReason: failureReason ?? self.failureReason,
             updatedAt: Date(),
-            sourceFingerprint: sourceFingerprint
+            sourceFingerprint: sourceFingerprint,
+            taskToken: taskToken
         )
     }
 }
