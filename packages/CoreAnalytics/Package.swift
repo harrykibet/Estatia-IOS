@@ -6,7 +6,8 @@ import PackageDescription
 let package = Package(
     name: "CoreAnalytics",
     platforms: [
-        .iOS(.v18)
+        .iOS(.v18),
+        .macOS(.v13)
     ],
     products: [
         .library(
