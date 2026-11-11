@@ -521,15 +521,18 @@ final class PlayerActorTests: XCTestCase {
         try await actor.handle(
             .loadIdentified(mediaId: "video-baseline", source: source)
         )
-        XCTAssertEqual(await states.next(), .loading)
+        let observedState1 = await states.next()
+        XCTAssertEqual(observedState1, .loading)
 
         transport.emitReady()
-        XCTAssertEqual(await states.next(), .ready)
+        let observedState2 = await states.next()
+        XCTAssertEqual(observedState2, .ready)
 
         try await actor.handle(.play)
         XCTAssertEqual(transport.playCount, 1)
         transport.emitTransportStatus(.playing)
-        XCTAssertEqual(await states.next(), .playing)
+        let observedState3 = await states.next()
+        XCTAssertEqual(observedState3, .playing)
 
         transport.emitFailure(
             NSError(
@@ -538,7 +541,9 @@ final class PlayerActorTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(await states.next(), .loading)
+        let observedState4 = await states.next()
+
+        XCTAssertEqual(observedState4, .loading)
         XCTAssertEqual(transport.loadCount, 2)
         XCTAssertEqual(transport.loadedMediaIds.last, "video-baseline")
 
@@ -559,12 +564,15 @@ final class PlayerActorTests: XCTestCase {
         // playback intent is allowed to reach the transport again.
         XCTAssertEqual(transport.playCount, 1)
         transport.emitReady()
-        XCTAssertEqual(await states.next(), .ready)
+        let observedState5 = await states.next()
+        XCTAssertEqual(observedState5, .ready)
         XCTAssertEqual(transport.playCount, 2)
 
         transport.emitTransportStatus(.playing)
-        XCTAssertEqual(await states.next(), .playing)
-        XCTAssertTrue(await actor.shouldResumeAfterInterruption)
+        let observedState6 = await states.next()
+        XCTAssertEqual(observedState6, .playing)
+        let resumedIntent = await actor.shouldResumeAfterInterruption
+        XCTAssertTrue(resumedIntent)
 
         try await actor.handle(.release)
     }
@@ -600,14 +608,17 @@ final class PlayerActorTests: XCTestCase {
                 code: AVError.Code.decoderTemporarilyUnavailable.rawValue
             )
         )
-        XCTAssertEqual(await states.next(), .loading)
+        let observedState7 = await states.next()
+        XCTAssertEqual(observedState7, .loading)
         XCTAssertEqual(transport.loadCount, 2)
 
         try await actor.handle(.pause)
-        XCTAssertFalse(await actor.shouldResumeAfterInterruption)
+        let pausedIntent = await actor.shouldResumeAfterInterruption
+        XCTAssertFalse(pausedIntent)
 
         transport.emitReady()
-        XCTAssertEqual(await states.next(), .ready)
+        let observedState8 = await states.next()
+        XCTAssertEqual(observedState8, .ready)
         XCTAssertEqual(
             transport.playCount,
             1,
@@ -646,7 +657,8 @@ final class PlayerActorTests: XCTestCase {
                 code: AVError.Code.decoderNotFound.rawValue
             )
         )
-        XCTAssertEqual(await states.next(), .loading)
+        let observedState9 = await states.next()
+        XCTAssertEqual(observedState9, .loading)
         XCTAssertEqual(transport.loadCount, 2)
 
         // The second failure belongs to the Baseline request; never start
@@ -657,8 +669,9 @@ final class PlayerActorTests: XCTestCase {
                 code: AVError.Code.decoderNotFound.rawValue
             )
         )
+        let terminalFailureState = await states.next()
         XCTAssertEqual(
-            await states.next(),
+            terminalFailureState,
             .error(.decoderUnavailable)
         )
         XCTAssertEqual(transport.loadCount, 2)
