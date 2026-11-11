@@ -18,6 +18,7 @@ public enum OfflineDownloadStatus: String, Codable, Sendable {
 public struct OfflineDownloadRecord: Codable, Sendable, Equatable, Identifiable {
     public let mediaId: String
     public let kind: OfflineDownloadKind
+    public let fileExtension: String
     public let status: OfflineDownloadStatus
     public let progress: Double
     public let totalBytesWritten: Int64
@@ -34,6 +35,7 @@ public struct OfflineDownloadRecord: Codable, Sendable, Equatable, Identifiable 
     init(
         mediaId: String,
         kind: OfflineDownloadKind,
+        fileExtension: String,
         status: OfflineDownloadStatus,
         progress: Double,
         totalBytesWritten: Int64,
@@ -45,6 +47,7 @@ public struct OfflineDownloadRecord: Codable, Sendable, Equatable, Identifiable 
     ) {
         self.mediaId = mediaId
         self.kind = kind
+        self.fileExtension = fileExtension
         self.status = status
         self.progress = min(1, max(0, progress))
         self.totalBytesWritten = max(0, totalBytesWritten)
@@ -82,6 +85,7 @@ extension OfflineDownloadRecord {
         OfflineDownloadRecord(
             mediaId: mediaId,
             kind: kind,
+            fileExtension: fileExtension,
             status: status,
             progress: progress ?? self.progress,
             totalBytesWritten: totalBytesWritten ?? self.totalBytesWritten,
