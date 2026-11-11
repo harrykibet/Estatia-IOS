@@ -1,3 +1,4 @@
+import CoreAnalytics
 import Foundation
 #if canImport(UIKit)
 import UIKit
@@ -19,6 +20,8 @@ public final class PlayerManager: VideoPlaybackTarget {
     private let networkMonitor: NetworkConnectivityProviding
     
     private let networkRecovery: NetworkRecoveryCoordinator
+
+    private let playbackAnalytics: PlaybackAnalytics
     
     private let environmentManager = EnvironmentManager()
     private let poolEnvironmentMonitor = PlayerPoolEnvironmentMonitor()
@@ -54,7 +57,7 @@ public final class PlayerManager: VideoPlaybackTarget {
     public private(set) var activeMediaId: String?
     private var hasStarted = false
     
-    public init() {
+    public init(analyticsClient: any AnalyticsClient = NoopAnalyticsClient()) {
         
         let cacheDirectory =
             FileManager.default.urls(
@@ -130,6 +133,7 @@ public final class PlayerManager: VideoPlaybackTarget {
         
         let networkMonitor = NetworkConnectivityMonitor()
         
+        self.playbackAnalytics = PlaybackAnalytics(analyticsClient: analyticsClient)
         self.pool = pool
         self.orchestrator = orchestrator
         self.streamingPipeline = streamingPipeline
@@ -271,6 +275,11 @@ public final class PlayerManager: VideoPlaybackTarget {
         onEngineReady: (@MainActor @Sendable (any PlayerEngine) async -> Void)? = nil
     ) async throws {
         
+        // Capture a monotonic request timestamp before player acquisition and
+        // media preparation so startup latency includes the complete path.
+        let analyticsSessionStartedAt = ProcessInfo.processInfo.systemUptime
+        playbackAnalytics.finishSession(at: analyticsSessionStartedAt)
+
         // A new explicit play request supersedes pending lifecycle intent.
         let lifecycleGeneration = lifecycleState.invalidateForExplicitCommand()
         installSystemPlaybackIntegrationIfNeeded()
@@ -286,6 +295,10 @@ public final class PlayerManager: VideoPlaybackTarget {
             source: source,
             qualityPreferences: qualityPreferences,
             onEngineReady: { [weak self] engine in
+                self?.playbackAnalytics.beginSession(
+                    mediaId: mediaId,
+                    startedAt: analyticsSessionStartedAt
+                )
                 // Publish manager ownership alongside orchestrator ownership so
                 // lifecycle transitions can see playback even while cache warm
                 // continues in the background of this call.
@@ -302,6 +315,10 @@ public final class PlayerManager: VideoPlaybackTarget {
             }
             )
         } catch {
+            playbackAnalytics.recordFailure(
+                PlayerError.from(error),
+                mediaId: mediaId
+            )
             if lifecycleState.isCurrent(lifecycleGeneration) {
                 audioSession.abandon()
             }
@@ -769,6 +786,7 @@ public final class PlayerManager: VideoPlaybackTarget {
         }
 
         mediaSessionPlaybackState = initialState
+        playbackAnalytics.observe(state: initialState)
         mediaSessionCoordinator.activate(
             title: title,
             artist: artist,
@@ -788,6 +806,7 @@ public final class PlayerManager: VideoPlaybackTarget {
                 }
 
                 self.mediaSessionPlaybackState = state
+                self.playbackAnalytics.observe(state: state)
                 let currentTime = await engine.currentTime
                 let duration = await engine.duration
                 guard self.mediaSessionGeneration == generation,
@@ -813,6 +832,7 @@ public final class PlayerManager: VideoPlaybackTarget {
                     return
                 }
 
+                self.playbackAnalytics.observe(event: event)
                 guard case let .progress(progress) = event else { continue }
                 self.mediaSessionCoordinator.updateProgress(
                     currentTime: progress.currentTime,
@@ -823,6 +843,7 @@ public final class PlayerManager: VideoPlaybackTarget {
     }
 
     private func stopMediaSessionObservation() {
+        playbackAnalytics.finishSession()
         mediaSessionGeneration &+= 1
         mediaSessionStateTask?.cancel()
         mediaSessionProgressTask?.cancel()
