@@ -57,7 +57,10 @@ public final class PlayerManager: VideoPlaybackTarget {
     public private(set) var activeMediaId: String?
     private var hasStarted = false
     
-    public init(analyticsClient: any AnalyticsClient = NoopAnalyticsClient()) {
+    public init(
+        analyticsClient: any AnalyticsClient = NoopAnalyticsClient(),
+        metricsClient: any MetricsClient = NoopMetricsClient()
+    ) {
         
         let cacheDirectory =
             FileManager.default.urls(
@@ -133,7 +136,10 @@ public final class PlayerManager: VideoPlaybackTarget {
         
         let networkMonitor = NetworkConnectivityMonitor()
         
-        self.playbackAnalytics = PlaybackAnalytics(analyticsClient: analyticsClient)
+        self.playbackAnalytics = PlaybackAnalytics(
+            analyticsClient: analyticsClient,
+            metricsClient: metricsClient
+        )
         self.pool = pool
         self.orchestrator = orchestrator
         self.streamingPipeline = streamingPipeline
