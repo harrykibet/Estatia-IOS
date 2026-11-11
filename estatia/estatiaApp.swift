@@ -7,7 +7,7 @@
 
 import SwiftUI
 import FirebaseCore
-import CorePlayerEngine
+import CorePlayerUI
 
 @MainActor
 class AppDelegate: NSObject, UIApplicationDelegate {
@@ -24,7 +24,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         handleEventsForBackgroundURLSession identifier: String,
         completionHandler: @escaping () -> Void
     ) {
-        PlayerManager.shared.handleBackgroundSessionEvents(
+        PlayerBackgroundSessionEvents.handle(
             identifier: identifier,
             completionHandler: completionHandler
         )
