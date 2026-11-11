@@ -137,6 +137,7 @@ public final class OfflineDownloadController:
         let kind = try Self.kind(for: source)
         let fingerprint = Self.fingerprint(for: source.url)
         let fileExtension = Self.fileExtension(for: source.url, kind: kind)
+        let taskToken = UUID().uuidString
 
         try stateQueue.sync {
             if let existing = records[mediaId],
@@ -192,7 +193,7 @@ public final class OfflineDownloadController:
                 #endif
             }
 
-            task.taskDescription = mediaId
+            task.taskDescription = taskToken
             records[mediaId] = OfflineDownloadRecord(
                 mediaId: mediaId,
                 kind: kind,
@@ -204,7 +205,8 @@ public final class OfflineDownloadController:
                 localURL: nil,
                 failureReason: nil,
                 updatedAt: Date(),
-                sourceFingerprint: fingerprint
+                sourceFingerprint: fingerprint,
+                taskToken: taskToken
             )
             tasks[mediaId] = task
             persistRegistry()
@@ -289,13 +291,14 @@ public final class OfflineDownloadController:
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        guard let mediaId = downloadTask.taskDescription else { return }
+        guard let taskToken = downloadTask.taskDescription else { return }
         stateQueue.async {
-            guard let record = self.records[mediaId],
+            guard let record = self.records.values.first(where: { $0.taskToken == taskToken }),
                   record.status == .downloading
             else {
                 return
             }
+            let mediaId = record.mediaId
             let expected = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : nil
             let progress = expected.map { Double(totalBytesWritten) / Double($0) } ?? 0
             self.records[mediaId] = record.replacing(
@@ -314,17 +317,17 @@ public final class OfflineDownloadController:
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        guard let mediaId = downloadTask.taskDescription else { return }
+        guard let taskToken = downloadTask.taskDescription else { return }
         guard let response = downloadTask.response as? HTTPURLResponse,
               (200..<300).contains(response.statusCode)
         else {
             finishWithFailure(
-                mediaId: mediaId,
+                taskToken: taskToken,
                 reason: "The server returned an unsuccessful download response."
             )
             return
         }
-        moveDownloadedAsset(location, mediaId: mediaId)
+        moveDownloadedAsset(location, taskToken: taskToken)
     }
 
     // MARK: - AVAssetDownloadDelegate
@@ -337,19 +340,19 @@ public final class OfflineDownloadController:
         totalTimeRangesLoaded loadedTimeRanges: [NSValue],
         timeRangeExpectedToLoad: CMTimeRange
     ) {
-        guard let mediaId = assetDownloadTask.taskDescription else { return }
+        guard let taskToken = assetDownloadTask.taskDescription else { return }
         let expected = timeRangeExpectedToLoad.duration.seconds
         let loaded = loadedTimeRanges.reduce(0.0) { total, value in
             total + value.timeRangeValue.duration.seconds
         }
         let progress = expected.isFinite && expected > 0 ? loaded / expected : 0
         stateQueue.async {
-            guard let record = self.records[mediaId],
+            guard let record = self.records.values.first(where: { $0.taskToken == taskToken }),
                   record.status == .downloading
             else {
                 return
             }
-            self.records[mediaId] = record.replacing(
+            self.records[record.mediaId] = record.replacing(
                 status: .downloading,
                 progress: progress
             )
@@ -363,8 +366,8 @@ public final class OfflineDownloadController:
         assetDownloadTask: AVAssetDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        guard let mediaId = assetDownloadTask.taskDescription else { return }
-        moveDownloadedAsset(location, mediaId: mediaId)
+        guard let taskToken = assetDownloadTask.taskDescription else { return }
+        moveDownloadedAsset(location, taskToken: taskToken)
     }
     #endif
 
@@ -373,10 +376,13 @@ public final class OfflineDownloadController:
         task: URLSessionTask,
         didCompleteWithError error: Error?
     ) {
-        guard let mediaId = task.taskDescription else { return }
+        guard let taskToken = task.taskDescription else { return }
         stateQueue.async {
+            guard let record = self.records.values.first(where: { $0.taskToken == taskToken }) else {
+                return
+            }
+            let mediaId = record.mediaId
             self.tasks.removeValue(forKey: mediaId)
-            guard let record = self.records[mediaId] else { return }
 
             // A successful download callback has already installed the artifact.
             if error == nil || record.status == .completed || record.status == .cancelled {
@@ -399,13 +405,16 @@ public final class OfflineDownloadController:
 
     // MARK: - Internal state
 
-    private func moveDownloadedAsset(_ temporaryURL: URL, mediaId: String) {
-        stateQueue.async {
-            guard let record = self.records[mediaId],
+    private func moveDownloadedAsset(_ temporaryURL: URL, taskToken: String) {
+        // URLSession's temporary download location is valid only until the
+        // delegate callback returns, so the move must finish synchronously.
+        stateQueue.sync {
+            guard let record = self.records.values.first(where: { $0.taskToken == taskToken }),
                   record.status == .downloading
             else {
                 return
             }
+            let mediaId = record.mediaId
 
             let destination = self.rootDirectory
                 .appendingPathComponent(Self.stableName(for: mediaId))
@@ -433,13 +442,14 @@ public final class OfflineDownloadController:
         }
     }
 
-    private func finishWithFailure(mediaId: String, reason: String) {
+    private func finishWithFailure(taskToken: String, reason: String) {
         stateQueue.async {
-            guard let record = self.records[mediaId],
+            guard let record = self.records.values.first(where: { $0.taskToken == taskToken }),
                   record.status == .downloading
             else {
                 return
             }
+            let mediaId = record.mediaId
             self.records[mediaId] = record.replacing(
                 status: .failed,
                 failureReason: .some(reason)
@@ -498,16 +508,16 @@ public final class OfflineDownloadController:
     private func restore(tasks activeTasks: [URLSessionTask]) {
         stateQueue.async {
             for task in activeTasks {
-                guard let mediaId = task.taskDescription,
-                      let record = self.records[mediaId],
+                guard let taskToken = task.taskDescription,
+                      let record = self.records.values.first(where: { $0.taskToken == taskToken }),
                       record.status == .queued || record.status == .downloading
                 else {
                     task.cancel()
                     continue
                 }
-                self.tasks[mediaId] = task
+                self.tasks[record.mediaId] = task
                 if record.status == .queued {
-                    self.records[mediaId] = record.replacing(status: .downloading)
+                    self.records[record.mediaId] = record.replacing(status: .downloading)
                 }
             }
             self.persistRegistry()
