@@ -160,16 +160,10 @@ public final class URLSessionMediaDataFetcher:
             }
         }
 
-        // A server that ignores Range returns the complete representation with
-        // HTTP 200 and Content-Length instead of a Content-Range header.
-        if response.statusCode == 200,
-           let contentLength = response.value(
-                forHTTPHeaderField:
-                    "Content-Length"
-           ) {
-            return Int64(contentLength)
-        }
-
+        // For HTTP 200, URLSession may transparently decompress the body,
+        // so Content-Length can describe the encoded transfer rather than the
+        // bytes handed to the caller. The resource loader infers that length
+        // from response.data.count instead.
         return nil
     }
 }
