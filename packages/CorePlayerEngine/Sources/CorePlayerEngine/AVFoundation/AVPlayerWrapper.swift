@@ -93,6 +93,9 @@ final class AVPlayerWrapper:
     private let cacheConfiguration:
         PlayerCacheConfiguration?
 
+    private let codecNegotiator:
+        StreamingCodecNegotiator
+
     // MARK: - Initialization
 
     init(
@@ -100,13 +103,19 @@ final class AVPlayerWrapper:
             TimeInterval,
 
         cacheConfiguration:
-            PlayerCacheConfiguration? = nil
+            PlayerCacheConfiguration? = nil,
+
+        codecNegotiator:
+            StreamingCodecNegotiator = StreamingCodecNegotiator()
     ) {
         self.progressInterval =
             progressInterval
 
         self.cacheConfiguration =
             cacheConfiguration
+
+        self.codecNegotiator =
+            codecNegotiator
 
         self.timeObserver =
             AVPlayerTimeObserver(
@@ -186,10 +195,14 @@ final class AVPlayerWrapper:
 
         cleanup()
 
+        // Resolve the same codec-aware source before either playback or
+        // cache loading so the manifest variant and cache identity agree.
+        let negotiatedSource = codecNegotiator.negotiate(source)
+
         let useCache =
             cacheConfiguration != nil &&
             Self.isProgressivelyCacheable(
-                source
+                negotiatedSource
             )
 
         if useCache,
@@ -199,7 +212,7 @@ final class AVPlayerWrapper:
                 mediaId:
                     mediaId,
                 source:
-                    source,
+                    negotiatedSource,
                 configuration:
                     cacheConfiguration
             )
@@ -208,7 +221,7 @@ final class AVPlayerWrapper:
 
             loadDirect(
                 source:
-                    source
+                    negotiatedSource
             )
         }
     }

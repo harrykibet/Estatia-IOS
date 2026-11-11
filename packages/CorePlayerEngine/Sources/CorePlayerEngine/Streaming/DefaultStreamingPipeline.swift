@@ -17,6 +17,9 @@ public final class DefaultStreamingPipeline:
     private let cacheKeyFactory:
         MediaCacheKeyProviding
 
+    private let codecNegotiator:
+        StreamingCodecNegotiator
+
     public init(
         cdns: [Cdn] = [],
         cacheWarmer:
@@ -29,7 +32,10 @@ public final class DefaultStreamingPipeline:
             DefaultLatencyMeasurer(),
         cacheKeyFactory:
             MediaCacheKeyProviding =
-            DefaultMediaCacheKeyFactory()
+            DefaultMediaCacheKeyFactory(),
+        codecNegotiator:
+            StreamingCodecNegotiator =
+            StreamingCodecNegotiator()
     ) {
         self.cacheWarmer =
             cacheWarmer
@@ -47,6 +53,9 @@ public final class DefaultStreamingPipeline:
 
         self.cacheKeyFactory =
             cacheKeyFactory
+
+        self.codecNegotiator =
+            codecNegotiator
     }
 
     public func warm(
@@ -71,50 +80,45 @@ public final class DefaultStreamingPipeline:
                     source
             )
 
+        // Use the negotiated variant for warming too, but keep the cache key
+        // tied to the original logical media identity above.
+        let negotiatedSource = codecNegotiator.negotiate(source)
+
         var networkSource =
-            source
+            negotiatedSource
 
         if let selector =
             cdnSelector,
            let best =
             await selector.selectBestCdn(
                 forPath:
-                    source.url.path
+                    negotiatedSource.url.path
             ) {
 
-            let base =
-                best.baseURL
-                    .absoluteString
+            // Replace only the network authority. Keep the negotiated
+            // codec query, auth query items, fragment and original path.
+            if var resolvedComponents = URLComponents(
+                url: negotiatedSource.url,
+                resolvingAgainstBaseURL: false
+            ),
+               let cdnComponents = URLComponents(
+                url: best.baseURL,
+                resolvingAgainstBaseURL: false
+               ) {
+                resolvedComponents.scheme = cdnComponents.scheme ?? resolvedComponents.scheme
+                resolvedComponents.host = cdnComponents.host ?? resolvedComponents.host
+                resolvedComponents.port = cdnComponents.port
+                resolvedComponents.user = cdnComponents.user
+                resolvedComponents.password = cdnComponents.password
 
-            let path =
-                source.url.path
-
-            let resolvedString:
-
-                String =
-                base.hasSuffix("/")
-                ? String(
-                    base.dropLast()
-                ) + path
-                : base + path
-
-            if let resolved =
-                URL(
-                    string:
-                        resolvedString
-                ) {
-
-                networkSource =
-                    MediaSource(
-                        url:
-                            resolved,
-                        type:
-                            source.type,
-                        headers:
-                            source.headers,
-                        metadata:
-                            source.metadata
+                if let resolved = resolvedComponents.url {
+                    networkSource = MediaSource(
+                        url: resolved,
+                        type: negotiatedSource.type,
+                        headers: negotiatedSource.headers,
+                        metadata: negotiatedSource.metadata
                     )
+                }
             }
         }
 
