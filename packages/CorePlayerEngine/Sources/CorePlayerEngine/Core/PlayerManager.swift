@@ -70,10 +70,20 @@ public final class PlayerManager: VideoPlaybackTarget {
                     cacheDirectory
             )
         
+        // Share CDN health state between playback range requests and cache warming.
+        let cdns = Cdn.estatiaDefaults
+        let cdnSelector = CdnSelector(cdns: cdns)
+        let cdnFetcher = CdnFailoverMediaDataFetcher(
+            baseFetcher: URLSessionMediaDataFetcher(),
+            selector: cdnSelector
+        )
+
         let cacheConfiguration =
             PlayerCacheConfiguration(
                 store:
-                    cacheStore
+                    cacheStore,
+                fetcher:
+                    cdnFetcher
             )
         
         let pool =
@@ -89,13 +99,19 @@ public final class PlayerManager: VideoPlaybackTarget {
         let cacheWarmer =
             MediaCacheWarmer(
                 store:
-                    cacheStore
+                    cacheStore,
+                fetcher:
+                    cdnFetcher
             )
 
         let streamingPipeline =
             DefaultStreamingPipeline(
+                cdns:
+                    cdns,
                 cacheWarmer:
-                    cacheWarmer
+                    cacheWarmer,
+                cdnSelector:
+                    cdnSelector
             )
         
         let orchestrator =
