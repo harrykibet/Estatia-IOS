@@ -29,7 +29,7 @@ public final class PlaybackAnalytics {
 
     public init(
         analyticsClient: any AnalyticsClient,
-        metricsClient: any MetricsClient = NoopMetricsClient()
+        metricsClient: any MetricsClient
     ) {
         self.analyticsClient = analyticsClient
         self.metricsClient = metricsClient
