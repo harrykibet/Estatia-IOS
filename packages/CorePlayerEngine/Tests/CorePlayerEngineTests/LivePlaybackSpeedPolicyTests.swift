@@ -84,6 +84,7 @@ final class LivePlaybackSpeedControllerTests: XCTestCase {
         var presentationPlayer: AVPlayer?
         var observedBitrateBps: Double?
         var livePlaybackTiming: LivePlaybackTiming?
+        var currentPlaybackRate: Float? = 1.0
         private(set) var livePlaybackEnabled = false
         private(set) var appliedRates: [Float] = []
 
@@ -94,6 +95,7 @@ final class LivePlaybackSpeedControllerTests: XCTestCase {
         }
         func setLivePlaybackSpeed(_ speed: Float) {
             appliedRates.append(speed)
+            currentPlaybackRate = speed
         }
     }
 
@@ -121,6 +123,31 @@ final class LivePlaybackSpeedControllerTests: XCTestCase {
         XCTAssertEqual(throttled ?? .nan, 1.03, accuracy: 0.0001)
         XCTAssertEqual(next ?? .nan, 0.97, accuracy: 0.0001)
         XCTAssertEqual(player.appliedRates, [1.03, 0.97])
+    }
+
+    func testControllerReappliesCorrectionAfterPlayerRateResetsToDefault() {
+        let controller = LivePlaybackSpeedController()
+        let player = FakePlayer()
+        let timing = LivePlaybackTiming(
+            currentOffsetSeconds: 10,
+            recommendedOffsetSeconds: 5
+        )
+
+        _ = controller.apply(timing, to: player, at: 10)
+        XCTAssertEqual(player.currentPlaybackRate ?? .nan, 1.03, accuracy: 0.0001)
+
+        // Simulate AVPlayer.play() or a live-edge transition restoring
+        // defaultRate while the controller still has 1.03 cached.
+        player.currentPlaybackRate = 1.0
+
+        let throttled = controller.apply(timing, to: player, at: 10.5)
+        XCTAssertEqual(throttled ?? .nan, 1.03, accuracy: 0.0001)
+        XCTAssertEqual(player.appliedRates, [1.03])
+
+        let resynchronized = controller.apply(timing, to: player, at: 11)
+        XCTAssertEqual(resynchronized ?? .nan, 1.03, accuracy: 0.0001)
+        XCTAssertEqual(player.currentPlaybackRate ?? .nan, 1.03, accuracy: 0.0001)
+        XCTAssertEqual(player.appliedRates, [1.03, 1.03])
     }
 
     func testMissingTimingRestoresNormalSpeedAfterAnAdjustment() {
