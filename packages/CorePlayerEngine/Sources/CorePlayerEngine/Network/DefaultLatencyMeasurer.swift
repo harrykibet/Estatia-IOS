@@ -1,6 +1,6 @@
 import Foundation
 
-public protocol LatencyMeasurer {
+public protocol LatencyMeasurer: Sendable {
     func measure(url: URL) async -> TimeInterval?
 }
 
