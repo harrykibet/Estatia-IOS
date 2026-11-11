@@ -22,7 +22,7 @@ public final class OfflineDownloadController:
         qos: .utility
     )
     private let delegateQueue: OperationQueue
-    private let progressiveSession: URLSession
+    private var progressiveSession: URLSession!
     #if os(iOS)
     private let hlsSession: AVAssetDownloadURLSession
     #endif
@@ -41,22 +41,13 @@ public final class OfflineDownloadController:
         delegateQueue.maxConcurrentOperationCount = 1
         self.delegateQueue = delegateQueue
 
-        self.progressiveSession = URLSession(
-            configuration: .default,
-            delegate: nil,
-            delegateQueue: nil
-        )
-
         super.init()
 
-        let progressiveSession = URLSession(
+        self.progressiveSession = URLSession(
             configuration: .default,
             delegate: self,
             delegateQueue: delegateQueue
         )
-        self.progressiveSession.invalidateAndCancel()
-        // Keep the delegate-backed session as the session used for progressive tasks.
-        self.progressiveSessionStorage = progressiveSession
 
         #if os(iOS)
         let configuration = URLSessionConfiguration.background(
@@ -78,15 +69,6 @@ public final class OfflineDownloadController:
         loadRegistry()
         restoreActiveTasks()
     }
-
-    // Stored separately so the public initializer can establish NSObject before
-    // constructing the delegate-backed session.
-    private var progressiveSessionStorage: URLSession {
-        get { sessionStorageLock.withLock { storedProgressiveSession } }
-        set { sessionStorageLock.withLock { storedProgressiveSession = newValue } }
-    }
-    private let sessionStorageLock = NSLock()
-    private var storedProgressiveSession: URLSession?
 
     private static func defaultRootDirectory() -> URL {
         let applicationSupport = FileManager.default.urls(
@@ -141,7 +123,7 @@ public final class OfflineDownloadController:
             let task: URLSessionTask
             switch kind {
             case .progressive:
-                task = progressiveSessionStorage.downloadTask(with: request)
+                task = progressiveSession.downloadTask(with: request)
 
             case .hls:
                 #if os(iOS)
@@ -437,7 +419,7 @@ public final class OfflineDownloadController:
     }
 
     private func restoreActiveTasks() {
-        progressiveSessionStorage.getAllTasks { [weak self] activeTasks in
+        progressiveSession.getAllTasks { [weak self] activeTasks in
             self?.restore(tasks: activeTasks)
         }
         #if os(iOS)
