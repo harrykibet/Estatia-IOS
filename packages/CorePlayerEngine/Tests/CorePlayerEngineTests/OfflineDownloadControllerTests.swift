@@ -51,7 +51,7 @@ final class OfflineDownloadControllerTests: XCTestCase {
             options: .atomic
         )
 
-        let controller = OfflineDownloadController(rootDirectory: directory)
+        let controller = OfflineDownloadController(rootDirectory: directory, usesBackgroundSessions: false)
         let originalSource = MediaSource(url: sourceURL, type: .progressive)
         let resolved = await controller.offlineSource(
             for: "property-video-1",
@@ -94,16 +94,14 @@ final class OfflineDownloadControllerTests: XCTestCase {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         let data = try encoder.encode(["video-2": record])
-        let persistedText = String(decoding: data, as: ISO Latin1.self)
-
-        XCTAssertFalse(persistedText.contains("do-not-persist"))
-        XCTAssertFalse(persistedText.contains(sourceURL.absoluteString))
+        XCTAssertNil(data.range(of: Data("do-not-persist".utf8)))
+        XCTAssertNil(data.range(of: Data(sourceURL.absoluteString.utf8)))
     }
 
     func testUnsupportedDASHDownloadIsRejected() throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let controller = OfflineDownloadController(rootDirectory: directory)
+        let controller = OfflineDownloadController(rootDirectory: directory, usesBackgroundSessions: false)
         let source = MediaSource(
             url: URL(string: "https://cdn.estatia.com/video.mpd")!,
             type: .dash
@@ -119,7 +117,7 @@ final class OfflineDownloadControllerTests: XCTestCase {
     func testNonHTTPSourceIsRejected() throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let controller = OfflineDownloadController(rootDirectory: directory)
+        let controller = OfflineDownloadController(rootDirectory: directory, usesBackgroundSessions: false)
         let source = MediaSource(
             url: URL(fileURLWithPath: "/tmp/video.mp4"),
             type: .progressive
@@ -157,7 +155,7 @@ final class OfflineDownloadControllerTests: XCTestCase {
             options: .atomic
         )
 
-        let controller = OfflineDownloadController(rootDirectory: directory)
+        let controller = OfflineDownloadController(rootDirectory: directory, usesBackgroundSessions: false)
         var iterator = controller.observeDownloads().makeAsyncIterator()
         let snapshot = await iterator.next()
 
@@ -171,7 +169,7 @@ final class OfflineDownloadControllerTests: XCTestCase {
     func testHLSDownloadReportsThatNativeOfflineHLSRequiresIOS() throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let controller = OfflineDownloadController(rootDirectory: directory)
+        let controller = OfflineDownloadController(rootDirectory: directory, usesBackgroundSessions: false)
         let source = MediaSource(
             url: URL(string: "https://cdn.estatia.com/master.m3u8")!,
             type: .hls
