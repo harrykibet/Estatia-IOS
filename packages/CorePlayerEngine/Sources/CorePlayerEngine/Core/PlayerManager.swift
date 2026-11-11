@@ -28,6 +28,7 @@ public final class PlayerManager: VideoPlaybackTarget {
     private let audioSession = AudioSessionManager()
     private let mediaSessionCoordinator = MediaSessionCoordinator()
     private let bitrateController = DynamicBitrateController()
+    private let livePlaybackSpeedController = LivePlaybackSpeedController()
     private var audioSessionObserversInstalled = false
     private var mediaSessionCommandsInstalled = false
     private var mediaSessionStateTask: Task<Void, Never>?
@@ -752,6 +753,8 @@ public final class PlayerManager: VideoPlaybackTarget {
         bitrateTask = nil
         if let monitoredBitrateEngine {
             bitrateController.reset(for: monitoredBitrateEngine)
+            livePlaybackSpeedController.reset(for: monitoredBitrateEngine)
+            monitoredBitrateEngine.setLivePlaybackEnabled(false)
             self.monitoredBitrateEngine = nil
         }
         monitoredBitrateContentType = nil
@@ -881,6 +884,8 @@ public final class PlayerManager: VideoPlaybackTarget {
 
         if let previousEngine = monitoredBitrateEngine {
             bitrateController.reset(for: previousEngine)
+            livePlaybackSpeedController.reset(for: previousEngine)
+            previousEngine.setLivePlaybackEnabled(false)
         }
 
         monitoredBitrateEngine = nil
@@ -901,6 +906,10 @@ public final class PlayerManager: VideoPlaybackTarget {
 
         monitoredBitrateEngine = provider
         monitoredBitrateContentType = contentType
+        provider.setLivePlaybackEnabled(contentType == .live)
+        if contentType != .live {
+            livePlaybackSpeedController.reset(for: provider)
+        }
 
         await orchestrator.notifySustainedLowBandwidth(
             mediaId: mediaId,
@@ -993,6 +1002,15 @@ public final class PlayerManager: VideoPlaybackTarget {
         )
 
         bitrateController.apply(input, to: provider)
+
+        if contentType == .live {
+            livePlaybackSpeedController.apply(
+                provider.livePlaybackTiming,
+                to: provider
+            )
+        } else {
+            livePlaybackSpeedController.reset(for: provider)
+        }
     }
 
     public func shutdown() async {
