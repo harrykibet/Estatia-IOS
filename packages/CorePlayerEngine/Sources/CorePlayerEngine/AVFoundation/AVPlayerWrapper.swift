@@ -99,6 +99,7 @@ final class AVPlayerWrapper:
     // These values are confined to the serial player queue.
     private var playbackQualityPreferences = PlaybackQualityPreferences.unrestricted
     private var isCurrentAssetHLS = false
+    private var isLivePlaybackEnabled = false
 
     // MARK: - Initialization
 
@@ -434,6 +435,7 @@ final class AVPlayerWrapper:
         self.playerItem =
             item
 
+        item.automaticallyPreservesTimeOffsetFromLive = isLivePlaybackEnabled
         applyPlaybackQuality(to: item)
 
         self.resourceLoader =
@@ -543,11 +545,94 @@ final class AVPlayerWrapper:
         }
     }
 
+    /// Reads the actual transport rate from the same serial queue that owns
+    /// AVPlayer mutations. This detects rate resets that occur without a
+    /// corresponding command from LivePlaybackSpeedController.
+    @MainActor
+    func currentPlaybackRate() -> Float? {
+        queue.sync {
+            player?.rate
+        }
+    }
+
     @MainActor
     func setPreferredPeakBitRate(_ bitrateBps: Double) {
         let safeBitrate = bitrateBps.isFinite ? max(0, bitrateBps) : 0
         queue.async { [weak self] in
             self?.playerItem?.preferredPeakBitRate = safeBitrate
+        }
+    }
+
+    /// Reads the current distance from the end of the seekable window and
+    /// AVFoundation's recommended target for the active live item.
+    @MainActor
+    func livePlaybackTimingSnapshot() -> LivePlaybackTiming? {
+        queue.sync {
+            guard let player,
+                  let item = playerItem,
+                  player.timeControlStatus == .playing
+            else {
+                return nil
+            }
+
+            let currentTime = player.currentTime().seconds
+            let recommendedOffset = item.recommendedTimeOffsetFromLive.seconds
+            let seekableEnd = item.seekableTimeRanges
+                .compactMap { value -> Double? in
+                    let end = CMTimeRangeGetEnd(value.timeRangeValue).seconds
+                    return end.isFinite ? end : nil
+                }
+                .max()
+
+            guard let seekableEnd,
+                  currentTime.isFinite,
+                  recommendedOffset.isFinite,
+                  recommendedOffset >= 0,
+                  seekableEnd >= currentTime
+            else {
+                return nil
+            }
+
+            return LivePlaybackTiming(
+                currentOffsetSeconds: seekableEnd - currentTime,
+                recommendedOffsetSeconds: recommendedOffset
+            )
+        }
+    }
+
+    /// Turns on AVFoundation's offset-preservation behavior for live items.
+    /// It has no effect for VOD items.
+    @MainActor
+    func setLivePlaybackEnabled(_ enabled: Bool) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.isLivePlaybackEnabled = enabled
+            self.playerItem?.automaticallyPreservesTimeOffsetFromLive = enabled
+
+            if !enabled,
+               let player = self.player,
+               player.timeControlStatus == .playing,
+               player.rate > 0 {
+                player.rate = 1.0
+            }
+        }
+    }
+
+    /// Adjusts only an already-playing transport; it never starts a paused or
+    /// waiting player and therefore cannot override PlayerActor's play intent.
+    @MainActor
+    func setLivePlaybackSpeed(_ speed: Float) {
+        guard speed.isFinite, speed > 0 else { return }
+
+        queue.async { [weak self] in
+            guard let player = self?.player,
+                  player.timeControlStatus == .playing,
+                  player.rate > 0
+            else {
+                return
+            }
+
+            player.rate = speed
         }
     }
 
