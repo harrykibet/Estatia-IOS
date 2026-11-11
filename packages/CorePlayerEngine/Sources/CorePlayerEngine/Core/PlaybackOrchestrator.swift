@@ -68,11 +68,13 @@ public final class PlaybackOrchestrator {
 
     public func play(
         mediaId: String,
-        source: MediaSource
+        source: MediaSource,
+        qualityPreferences: PlaybackQualityPreferences = .unrestricted
     ) async throws {
         try await playInternal(
             mediaId: mediaId,
             source: source,
+            qualityPreferences: qualityPreferences,
             onEngineReady: nil
         )
     }
@@ -80,11 +82,13 @@ public final class PlaybackOrchestrator {
     public func playWithEngineReady(
         mediaId: String,
         source: MediaSource,
+        qualityPreferences: PlaybackQualityPreferences = .unrestricted,
         onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
     ) async throws {
         try await playInternal(
             mediaId: mediaId,
             source: source,
+            qualityPreferences: qualityPreferences,
             onEngineReady: { engine in
                 await onEngineReady(engine)
             }
@@ -94,6 +98,7 @@ public final class PlaybackOrchestrator {
     private func playInternal(
         mediaId: String,
         source: MediaSource,
+        qualityPreferences: PlaybackQualityPreferences,
         onEngineReady: (@MainActor @Sendable (any PlayerEngine) async -> Void)?
     ) async throws {
 
@@ -133,6 +138,7 @@ public final class PlaybackOrchestrator {
             }
 
             try await managed.perform {
+                managed.engine.applyPlaybackQuality(qualityPreferences)
                 try await managed.engine.play()
             }
 
