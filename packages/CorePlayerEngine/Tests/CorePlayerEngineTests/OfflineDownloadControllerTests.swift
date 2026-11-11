@@ -40,7 +40,8 @@ final class OfflineDownloadControllerTests: XCTestCase {
             localURL: localURL,
             failureReason: nil,
             updatedAt: Date(),
-            sourceFingerprint: fingerprint(sourceURL)
+            sourceFingerprint: fingerprint(sourceURL),
+            taskToken: "restored-task"
         )
 
         let encoder = PropertyListEncoder()
