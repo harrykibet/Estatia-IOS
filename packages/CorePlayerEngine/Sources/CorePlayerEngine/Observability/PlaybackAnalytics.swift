@@ -68,11 +68,13 @@ public final class PlaybackAnalytics {
         if state == .playing {
             if !firstPlaybackReported, let sessionStartedAt {
                 let startupMs = elapsedMilliseconds(from: sessionStartedAt, to: uptime)
-                metricsClient.trackDuration(
-                    name: "player.startup.duration",
-                    durationMilliseconds: startupMs,
-                    tags: currentTags()
-                )
+                if startupMs > 0 {
+                    metricsClient.trackDuration(
+                        name: "player.startup.duration",
+                        durationMilliseconds: startupMs,
+                        tags: currentTags()
+                    )
+                }
                 firstPlaybackReported = true
             }
 
