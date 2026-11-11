@@ -37,6 +37,9 @@ public protocol AVPlayerProviding: AnyObject {
     /// and AVFoundation has enough seekable-window information to calculate them.
     var livePlaybackTiming: LivePlaybackTiming? { get }
 
+    /// Current AVPlayer transport rate, when the adapter can observe it.
+    var currentPlaybackRate: Float? { get }
+
     /// Sets AVPlayerItem.preferredPeakBitRate. Pass zero to remove the cap.
     func setPreferredPeakBitRate(_ bitrateBps: Double)
 
@@ -54,6 +57,7 @@ public extension AVPlayerProviding {
     /// Compatibility defaults for custom presentation adapters that do not
     /// expose live timing or tune HLS.
     var livePlaybackTiming: LivePlaybackTiming? { nil }
+    var currentPlaybackRate: Float? { presentationPlayer?.rate }
     func setPlaybackQuality(_ preferences: PlaybackQualityPreferences) {}
     func setLivePlaybackEnabled(_ enabled: Bool) {}
     func setLivePlaybackSpeed(_ speed: Float) {}
