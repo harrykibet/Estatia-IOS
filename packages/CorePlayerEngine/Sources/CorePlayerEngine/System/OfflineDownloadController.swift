@@ -30,7 +30,7 @@ public final class OfflineDownloadController:
     private var hlsSession: AVAssetDownloadURLSession?
     #endif
 
-    // All properties below are confined to stateQueue.
+    // Download records, task mappings and stream observers are confined to stateQueue.
     private var records: [String: OfflineDownloadRecord] = [:]
     private var tasks: [String: URLSessionTask] = [:]
     private var observers: [UUID: AsyncStream<[OfflineDownloadRecord]>.Continuation] = [:]
@@ -71,7 +71,7 @@ public final class OfflineDownloadController:
         )
 
         if usesBackgroundSessions {
-            self.hlsSession = makeHLSDownloadSession()
+            self.hlsSession = hlsDownloadSession()
         }
         #else
         self.progressiveSession = URLSession(
@@ -177,7 +177,7 @@ public final class OfflineDownloadController:
                     assetOptions["AVURLAssetHTTPHeaderFieldsKey"] = headers
                 }
                 let asset = AVURLAsset(url: source.url, options: assetOptions)
-                let session = hlsSession ?? makeHLSDownloadSession()
+                let session = hlsDownloadSession()
                 guard let downloadTask = session.makeAssetDownloadTask(
                     asset: asset,
                     assetTitle: mediaId,
@@ -465,17 +465,22 @@ public final class OfflineDownloadController:
     }
 
     #if os(iOS)
-    private func makeHLSDownloadSession() -> AVAssetDownloadURLSession {
+    private func hlsDownloadSession() -> AVAssetDownloadURLSession {
+        if let hlsSession {
+            return hlsSession
+        }
         let configuration = URLSessionConfiguration.background(
             withIdentifier: Self.hlsBackgroundSessionIdentifier
         )
         configuration.isDiscretionary = false
         configuration.sessionSendsLaunchEvents = true
-        return AVAssetDownloadURLSession(
+        let session = AVAssetDownloadURLSession(
             configuration: configuration,
             assetDownloadDelegate: self,
             delegateQueue: delegateQueue
         )
+        hlsSession = session
+        return session
     }
     #endif
 
