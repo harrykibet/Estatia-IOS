@@ -5,7 +5,7 @@ final class CodecBaselineFallbackPolicyTests: XCTestCase {
     func testReplacesSelectedCodecAndPreservesOtherURLAndRequestData() throws {
         let metadata = Metadata(
             title: "Fallback video",
-            artist: "Estatia"
+            subtitle: "Estatia"
         )
         let source = MediaSource(
             url: URL(string: "https://media.estatia.com/watch/master.m3u8?token=abc&codec=av1&quality=auto#video")!,
