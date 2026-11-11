@@ -31,6 +31,9 @@ public enum PlayerError: Error, Equatable, Sendable {
     
     /// Failed to decode media data
     case decodingFailed
+
+    /// AVFoundation could not find or allocate a decoder for this media.
+    case decoderUnavailable
     
     /// Playback stalled and could not recover
     case playbackStalled
@@ -94,19 +97,23 @@ public extension PlayerError {
             return mapNetworkError(nsError)
         }
 
-        // AVFoundation often wraps transport failures inside an underlying
-        // NSError. Inspect that before classifying the failure as decoding.
+        // AVFoundation often wraps transport failures or decoder errors
+        // inside an underlying NSError. Prefer the more specific underlying
+        // cause before classifying the outer AVFoundation error.
         if let underlying = nsError.userInfo[
             NSUnderlyingErrorKey
         ] as? NSError {
-
             if underlying.domain == NSURLErrorDomain {
                 return mapNetworkError(underlying)
             }
+
+            if let mapped = mapAVError(underlying) {
+                return mapped
+            }
         }
 
-        if nsError.domain == AVError.errorDomain {
-            return .decodingFailed
+        if let mapped = mapAVError(nsError) {
+            return mapped
         }
 
         return .system(
@@ -119,6 +126,23 @@ public extension PlayerError {
 }
 
 private extension PlayerError {
+
+    static func mapAVError(_ error: NSError) -> PlayerError? {
+        guard error.domain == AVError.errorDomain else {
+            return nil
+        }
+
+        guard let code = AVError.Code(rawValue: error.code) else {
+            return .decodingFailed
+        }
+
+        switch code {
+        case .decoderNotFound, .decoderTemporarilyUnavailable:
+            return .decoderUnavailable
+        default:
+            return .decodingFailed
+        }
+    }
 
     static func mapNetworkError(
         _ error: NSError

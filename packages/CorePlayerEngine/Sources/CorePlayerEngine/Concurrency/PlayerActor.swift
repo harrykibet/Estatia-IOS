@@ -37,6 +37,8 @@ actor PlayerActor {
     
     private var reducer = PlaybackStateReducer()
     private var currentSource: MediaSource?
+    private var currentMediaId: String?
+    private var didAttemptBaselineCodecFallback = false
     
     private var currentTimeInternal: TimeInterval = 0
     private var durationInternal: TimeInterval?
@@ -51,6 +53,7 @@ actor PlayerActor {
 
     /// Recovery loads defer resumption until the orchestrator validates ownership.
     private var isLoadingForNetworkRecovery = false
+    private var isLoadingForCodecFallback = false
     private var recoveryResumeAuthorized = false
     
     // MARK: - Initialization
@@ -160,10 +163,11 @@ actor PlayerActor {
             apply(.ready)
             emit(.ready)
             
-            let wasNetworkRecoveryLoad = isLoadingForNetworkRecovery
+            let wasManagedReload = isLoadingForNetworkRecovery || isLoadingForCodecFallback
             isLoadingForNetworkRecovery = false
+            isLoadingForCodecFallback = false
 
-            if wasNetworkRecoveryLoad {
+            if wasManagedReload {
                 let resumeWasAuthorized = recoveryResumeAuthorized
                 recoveryResumeAuthorized = false
                 if resumeWasAuthorized {
@@ -189,8 +193,14 @@ actor PlayerActor {
             
         case .failed(let error):
             isLoadingForNetworkRecovery = false
+            isLoadingForCodecFallback = false
             recoveryResumeAuthorized = false
             await watchdog.cancel()
+
+            if await attemptBaselineCodecFallback(for: error) {
+                return
+            }
+
             handlePlaybackFailure(error)
             
         case .progress(let progress):
@@ -296,12 +306,21 @@ actor PlayerActor {
     ) async throws {
         await watchdog.cancel()
         isLoadingForNetworkRecovery = true
+        isLoadingForCodecFallback = false
         recoveryResumeAuthorized = false
         apply(.loadStarted)
-        currentSource = source
+
+        // Once this engine has fallen back, connectivity recovery must keep
+        // using the Baseline rendition rather than re-requesting the failed
+        // AV1/HEVC variant from the orchestrator's original source snapshot.
+        let recoverySource = didAttemptBaselineCodecFallback
+            ? (CodecBaselineFallbackPolicy.fallbackSource(for: source) ?? source)
+            : source
+        currentMediaId = mediaId
+        currentSource = recoverySource
 
         do {
-            try await player.load(mediaId: mediaId, source: source)
+            try await player.load(mediaId: mediaId, source: recoverySource)
         } catch {
             isLoadingForNetworkRecovery = false
             recoveryResumeAuthorized = false
@@ -321,15 +340,17 @@ actor PlayerActor {
             await watchdog.cancel()
             wantsPlayback = false
             isLoadingForNetworkRecovery = false
+            isLoadingForCodecFallback = false
             recoveryResumeAuthorized = false
             apply(.loadStarted)
-            
-            currentSource = source
-            
+
+            let mediaId = source.url.absoluteString
+            prepareForExplicitLoad(mediaId: mediaId, source: source)
+
             do {
                 try await player.load(
                     mediaId:
-                        source.url.absoluteString,
+                        mediaId,
                     source:
                         source
                 )
@@ -346,11 +367,12 @@ actor PlayerActor {
             await watchdog.cancel()
             wantsPlayback = false
             isLoadingForNetworkRecovery = false
+            isLoadingForCodecFallback = false
             recoveryResumeAuthorized = false
             apply(.loadStarted)
-            
-            currentSource = source
-            
+
+            prepareForExplicitLoad(mediaId: mediaId, source: source)
+
             do {
                 try await player.load(
                     mediaId:
@@ -370,7 +392,7 @@ actor PlayerActor {
             // has ended.
             if isAudioInterrupted {
                 wantsPlayback = true
-                if isLoadingForNetworkRecovery {
+                if isLoadingForNetworkRecovery || isLoadingForCodecFallback {
                     recoveryResumeAuthorized = true
                 }
                 return
@@ -378,7 +400,7 @@ actor PlayerActor {
 
             if reducer.state == .loading {
                 wantsPlayback = true
-                if isLoadingForNetworkRecovery {
+                if isLoadingForNetworkRecovery || isLoadingForCodecFallback {
                     recoveryResumeAuthorized = true
                 }
                 return
@@ -430,7 +452,7 @@ actor PlayerActor {
             }
 
             if reducer.state == .loading {
-                if isLoadingForNetworkRecovery {
+                if isLoadingForNetworkRecovery || isLoadingForCodecFallback {
                     recoveryResumeAuthorized = true
                 }
                 return
@@ -477,6 +499,10 @@ actor PlayerActor {
             await watchdog.cancel()
             wantsPlayback = false
             isAudioInterrupted = false
+            isLoadingForNetworkRecovery = false
+            isLoadingForCodecFallback = false
+            recoveryResumeAuthorized = false
+            didAttemptBaselineCodecFallback = false
             player.stop()
             
             apply(.reset)
@@ -488,6 +514,10 @@ actor PlayerActor {
             await watchdog.cancel()
             wantsPlayback = false
             isAudioInterrupted = false
+            isLoadingForNetworkRecovery = false
+            isLoadingForCodecFallback = false
+            recoveryResumeAuthorized = false
+            didAttemptBaselineCodecFallback = false
             player.release()
             
             apply(.released)
@@ -499,6 +529,56 @@ actor PlayerActor {
         }
     }
     
+
+    // MARK: - Codec Fallback
+
+    private func prepareForExplicitLoad(
+        mediaId: String,
+        source: MediaSource
+    ) {
+        if currentMediaId != mediaId || currentSource != source {
+            didAttemptBaselineCodecFallback = false
+        }
+
+        currentMediaId = mediaId
+        currentSource = source
+    }
+
+    /// Retries a decoder-specific failure with the H.264 Baseline rendition.
+    /// This remains inside the same PlayerActor/PlayerTransport ownership path.
+    private func attemptBaselineCodecFallback(
+        for error: PlayerError
+    ) async -> Bool {
+        guard error == .decoderUnavailable,
+              wantsPlayback,
+              !didAttemptBaselineCodecFallback,
+              let mediaId = currentMediaId,
+              let source = currentSource,
+              let fallbackSource = CodecBaselineFallbackPolicy.fallbackSource(for: source)
+        else {
+            return false
+        }
+
+        didAttemptBaselineCodecFallback = true
+        currentSource = fallbackSource
+        isLoadingForCodecFallback = true
+        recoveryResumeAuthorized = wantsPlayback
+        apply(.loadStarted)
+
+        do {
+            try await player.load(
+                mediaId: mediaId,
+                source: fallbackSource
+            )
+        } catch {
+            isLoadingForCodecFallback = false
+            recoveryResumeAuthorized = false
+            handlePlaybackFailure(error)
+        }
+
+        return true
+    }
+
     // MARK: - State Helpers
     
     private func apply(
