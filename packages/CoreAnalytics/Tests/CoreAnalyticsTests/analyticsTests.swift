@@ -36,8 +36,7 @@ import Testing
     client.track(name: "123 unusual / event", properties: properties)
 
     #expect(recordedParameters?.count == 25)
-    #expect(recordedParameters?["meta_firebase_internal"] as? String == nil
-        || recordedParameters?["meta_firebase_internal"] as? String == "value")
+    #expect(recordedParameters?["meta_firebase_internal"] as? String == "reserved")
     #expect(FirebaseAnalyticsClient.normalizedEventName(for: "123 unusual / event").hasPrefix("event_"))
 }
 
