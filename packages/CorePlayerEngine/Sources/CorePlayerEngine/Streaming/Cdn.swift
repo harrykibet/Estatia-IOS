@@ -1,6 +1,11 @@
 import Foundation
 
 public struct Cdn: @unchecked Sendable {
+    /// Default CDN endpoints mirrored from Android's bundled network configuration.
+    public static let estatiaDefaults: [Cdn] = [
+        Cdn(id: "primary", baseURL: URL(string: "https://primarycdn.estatia.com")!),
+        Cdn(id: "backup", baseURL: URL(string: "https://backupcdn.estatia.com")!)
+    ]
     public let id: String
     public let baseURL: URL
     public let healthCheckPath: String?
