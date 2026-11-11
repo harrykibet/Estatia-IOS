@@ -66,13 +66,27 @@ public final class PlaybackOrchestrator {
 
     // MARK: - Play
 
+    /// Existing two-argument entry point retained as the VideoPlaybackTarget witness.
     public func play(
         mediaId: String,
         source: MediaSource
     ) async throws {
+        try await play(
+            mediaId: mediaId,
+            source: source,
+            qualityPreferences: .unrestricted
+        )
+    }
+
+    public func play(
+        mediaId: String,
+        source: MediaSource,
+        qualityPreferences: PlaybackQualityPreferences
+    ) async throws {
         try await playInternal(
             mediaId: mediaId,
             source: source,
+            qualityPreferences: qualityPreferences,
             onEngineReady: nil
         )
     }
@@ -80,11 +94,13 @@ public final class PlaybackOrchestrator {
     public func playWithEngineReady(
         mediaId: String,
         source: MediaSource,
+        qualityPreferences: PlaybackQualityPreferences = .unrestricted,
         onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
     ) async throws {
         try await playInternal(
             mediaId: mediaId,
             source: source,
+            qualityPreferences: qualityPreferences,
             onEngineReady: { engine in
                 await onEngineReady(engine)
             }
@@ -94,6 +110,7 @@ public final class PlaybackOrchestrator {
     private func playInternal(
         mediaId: String,
         source: MediaSource,
+        qualityPreferences: PlaybackQualityPreferences,
         onEngineReady: (@MainActor @Sendable (any PlayerEngine) async -> Void)?
     ) async throws {
 
@@ -133,6 +150,7 @@ public final class PlaybackOrchestrator {
             }
 
             try await managed.perform {
+                managed.engine.applyPlaybackQuality(qualityPreferences)
                 try await managed.engine.play()
             }
 

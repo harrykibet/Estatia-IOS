@@ -20,6 +20,9 @@ public protocol PlayerEngine: AnyObject {
 
     func play() async throws
 
+    /// Applies initial adaptive-streaming constraints before playback starts.
+    func applyPlaybackQuality(_ preferences: PlaybackQualityPreferences)
+
     func pause() async throws
 
     /// Temporarily pauses transport without discarding the user's desired
@@ -73,6 +76,9 @@ public protocol PlayerEngine: AnyObject {
 }
 
 public extension PlayerEngine {
+
+    /// Compatibility default for custom/test engines without an AVFoundation transport.
+    func applyPlaybackQuality(_ preferences: PlaybackQualityPreferences) {}
 
     var isSustainedLowBandwidth: Bool { false }
 

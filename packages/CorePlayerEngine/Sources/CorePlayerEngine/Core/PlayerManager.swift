@@ -229,6 +229,22 @@ public final class PlayerManager: VideoPlaybackTarget {
         )
     }
 
+    public func playWithEngineReady(
+        mediaId: String,
+        source: MediaSource,
+        matchScore: Double,
+        onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
+    ) async throws {
+        try await play(
+            mediaId: mediaId,
+            source: source,
+            title: nil,
+            artist: nil,
+            matchScore: matchScore,
+            onEngineReady: onEngineReady
+        )
+    }
+
     public func invalidatePendingPlaybackRequest() {
         orchestrator.invalidatePendingPlaybackRequest()
     }
@@ -251,6 +267,7 @@ public final class PlayerManager: VideoPlaybackTarget {
         title: String? = nil,
         artist: String? = nil,
         contentType: PlaybackContentType = .onDemand,
+        matchScore: Double = 0.5,
         onEngineReady: (@MainActor @Sendable (any PlayerEngine) async -> Void)? = nil
     ) async throws {
         
@@ -260,9 +277,14 @@ public final class PlayerManager: VideoPlaybackTarget {
         audioSession.request()
 
         do {
+            let qualityPreferences = PlaybackQualityPolicy().preferences(
+                matchScore: matchScore,
+                thermalState: poolEnvironment.thermalState
+            )
             try await orchestrator.playWithEngineReady(
             mediaId: mediaId,
             source: source,
+            qualityPreferences: qualityPreferences,
             onEngineReady: { [weak self] engine in
                 // Publish manager ownership alongside orchestrator ownership so
                 // lifecycle transitions can see playback even while cache warm
@@ -937,7 +959,10 @@ public final class PlayerManager: VideoPlaybackTarget {
             isMetered: snapshot.isExpensive,
             isConstrained: snapshot.isConstrained,
             contentType: contentType,
-            isStartup: progress.currentTime < 5
+            isStartup: progress.currentTime < 5,
+            deviceMaximumBitrateBps: environment.thermalState == .nominal
+                ? nil
+                : 2_000_000
         )
 
         bitrateController.apply(input, to: provider)

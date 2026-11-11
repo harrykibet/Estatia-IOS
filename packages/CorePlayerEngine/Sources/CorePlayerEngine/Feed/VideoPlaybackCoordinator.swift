@@ -222,6 +222,7 @@ public final class VideoPlaybackCoordinator {
         try await playback.playWithEngineReady(
             mediaId: item.mediaId,
             source: item.source,
+            matchScore: item.matchScore,
             onEngineReady: { [weak self] engine in
                 guard let self,
                       self.isCurrentVisibility(generation)

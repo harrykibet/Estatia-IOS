@@ -29,6 +29,14 @@ public protocol VideoPlaybackTarget: AnyObject {
         onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
     ) async throws
 
+    /// Starts visible playback with the recommendation score used to bound its initial HLS rendition.
+    func playWithEngineReady(
+        mediaId: String,
+        source: MediaSource,
+        matchScore: Double,
+        onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
+    ) async throws
+
     func preload(
         mediaId: String,
         source: MediaSource
@@ -69,6 +77,20 @@ public extension VideoPlaybackTarget {
     ) async throws {
         try await play(mediaId: mediaId, source: source)
         await onEngineReady(await playerEngine(for: mediaId))
+    }
+
+    /// Compatibility fallback: custom playback targets may ignore recommendation-aware quality hints.
+    func playWithEngineReady(
+        mediaId: String,
+        source: MediaSource,
+        matchScore: Double,
+        onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
+    ) async throws {
+        try await playWithEngineReady(
+            mediaId: mediaId,
+            source: source,
+            onEngineReady: onEngineReady
+        )
     }
 }
 
