@@ -171,7 +171,8 @@ public final class URLSessionMediaDataFetcher:
         }
 
         return nil
-    }}
+    }
+}
 
 public struct MediaCacheWarmRequest:
     Sendable {
