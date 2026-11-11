@@ -100,7 +100,7 @@ public final class AppDIContainer {
 
         self.appScope = AppScope(
             logger: ConsoleLogger(),
-            analytics: NoopAnalyticsClient(),
+            analytics: FirebaseAnalyticsClient(),
             notifications: NoopNotificationsClient(),
             apiClient: NoopAPIClient(),
             database: InMemoryDatabaseClient(),
@@ -131,7 +131,7 @@ public final class AppDIContainer {
             // Wire MVVM for Search
             let propertyRemoteForSearch: PropertyRemoteDataSource = NoopPropertyRemoteDataSource()
             let propertyRepoForSearch = RemotePropertyRepository(remote: propertyRemoteForSearch)
-            let searchVM = FeatureSearch.SearchViewModel(repository: propertyRepoForSearch)
+            let searchVM = FeatureSearch.SearchViewModel(repository: propertyRemoteForSearch == nil ? nil : propertyRepoForSearch)
             return AnyView(FeatureSearch.SearchView(viewModel: searchVM))
 
         case .property:
@@ -239,4 +239,3 @@ extension AppDIContainer.FeatureDestination: Hashable {
         }
     }
 }
-
