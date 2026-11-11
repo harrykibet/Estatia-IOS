@@ -22,6 +22,8 @@ final class PlayerActorTests: XCTestCase {
         private var _playCount = 0
         private var _pauseCount = 0
         private var _loadCount = 0
+        private var _loadedMediaIds: [String] = []
+        private var _loadedSources: [MediaSource] = []
 
         var onReady: (@MainActor @Sendable () -> Void)? {
             get { withLock { readyHandler } }
@@ -53,9 +55,15 @@ final class PlayerActorTests: XCTestCase {
         var playCount: Int { withLock { _playCount } }
         var pauseCount: Int { withLock { _pauseCount } }
         var loadCount: Int { withLock { _loadCount } }
+        var loadedMediaIds: [String] { withLock { _loadedMediaIds } }
+        var loadedSources: [MediaSource] { withLock { _loadedSources } }
 
         func load(mediaId: String, source: MediaSource) async throws {
-            withLock { _loadCount += 1 }
+            withLock {
+                _loadCount += 1
+                _loadedMediaIds.append(mediaId)
+                _loadedSources.append(source)
+            }
         }
 
         func play() {
@@ -82,6 +90,12 @@ final class PlayerActorTests: XCTestCase {
         func emitTransportStatus(_ status: PlayerTransportStatus) {
             let handler = withLock { transportHandler }
             handler?(status)
+        }
+
+        @MainActor
+        func emitFailure(_ error: Error) {
+            let handler = withLock { errorHandler }
+            handler?(error)
         }
 
         private func withLock<T>(_ operation: () -> T) -> T {
@@ -487,5 +501,208 @@ final class PlayerActorTests: XCTestCase {
         XCTAssertEqual(playingState, .playing)
         try await actor.handle(.release)
     }
+
+
+    func testDecoderFailureRetriesSameMediaWithBaselineAndResumesPlayback() async throws {
+        let transport = FakePlayerTransport()
+        let stateEmitter = PlayerEventEmitter<PlayerState>()
+        let actor = PlayerActor(
+            config: PlayerConfiguration(),
+            player: transport,
+            watchdog: PlaybackWatchdog(),
+            stateEmitter: stateEmitter,
+            eventEmitter: PlayerEventEmitter<PlayerEvent>()
+        )
+        var states = stateEmitter.stream.makeAsyncIterator()
+        let source = MediaSource(
+            url: URL(string: "https://media.estatia.com/watch/master.m3u8?token=abc")!
+        )
+
+        try await actor.handle(
+            .loadIdentified(mediaId: "video-baseline", source: source)
+        )
+        XCTAssertEqual(await states.next(), .loading)
+
+        transport.emitReady()
+        XCTAssertEqual(await states.next(), .ready)
+
+        try await actor.handle(.play)
+        XCTAssertEqual(transport.playCount, 1)
+        transport.emitTransportStatus(.playing)
+        XCTAssertEqual(await states.next(), .playing)
+
+        transport.emitFailure(
+            NSError(
+                domain: AVError.errorDomain,
+                code: AVError.Code.decoderNotFound.rawValue
+            )
+        )
+
+        XCTAssertEqual(await states.next(), .loading)
+        XCTAssertEqual(transport.loadCount, 2)
+        XCTAssertEqual(transport.loadedMediaIds.last, "video-baseline")
+
+        let fallbackSource = try XCTUnwrap(transport.loadedSources.last)
+        let fallbackComponents = try XCTUnwrap(
+            URLComponents(url: fallbackSource.url, resolvingAgainstBaseURL: false)
+        )
+        XCTAssertEqual(
+            fallbackComponents.queryItems?.first(where: { $0.name == "codec" })?.value,
+            "baseline"
+        )
+        XCTAssertEqual(
+            fallbackComponents.queryItems?.first(where: { $0.name == "token" })?.value,
+            "abc"
+        )
+
+        // The baseline rendition must become ready before the original
+        // playback intent is allowed to reach the transport again.
+        XCTAssertEqual(transport.playCount, 1)
+        transport.emitReady()
+        XCTAssertEqual(await states.next(), .ready)
+        XCTAssertEqual(transport.playCount, 2)
+
+        transport.emitTransportStatus(.playing)
+        XCTAssertEqual(await states.next(), .playing)
+        XCTAssertTrue(await actor.shouldResumeAfterInterruption)
+
+        try await actor.handle(.release)
+    }
+
+    func testExplicitPauseDuringBaselineLoadCancelsAutomaticResume() async throws {
+        let transport = FakePlayerTransport()
+        let stateEmitter = PlayerEventEmitter<PlayerState>()
+        let actor = PlayerActor(
+            config: PlayerConfiguration(),
+            player: transport,
+            watchdog: PlaybackWatchdog(),
+            stateEmitter: stateEmitter,
+            eventEmitter: PlayerEventEmitter<PlayerEvent>()
+        )
+        var states = stateEmitter.stream.makeAsyncIterator()
+        let source = MediaSource(
+            url: URL(string: "https://media.estatia.com/watch/master.m3u8?codec=hevc")!
+        )
+
+        try await actor.handle(
+            .loadIdentified(mediaId: "video-paused", source: source)
+        )
+        _ = await states.next()
+        transport.emitReady()
+        _ = await states.next()
+        try await actor.handle(.play)
+        transport.emitTransportStatus(.playing)
+        _ = await states.next()
+
+        transport.emitFailure(
+            NSError(
+                domain: AVError.errorDomain,
+                code: AVError.Code.decoderTemporarilyUnavailable.rawValue
+            )
+        )
+        XCTAssertEqual(await states.next(), .loading)
+        XCTAssertEqual(transport.loadCount, 2)
+
+        try await actor.handle(.pause)
+        XCTAssertFalse(await actor.shouldResumeAfterInterruption)
+
+        transport.emitReady()
+        XCTAssertEqual(await states.next(), .ready)
+        XCTAssertEqual(
+            transport.playCount,
+            1,
+            "A user pause during fallback loading must suppress automatic resume."
+        )
+
+        try await actor.handle(.release)
+    }
+
+    func testBaselineDecoderFailureIsTerminalAndDoesNotRetryAgain() async throws {
+        let transport = FakePlayerTransport()
+        let stateEmitter = PlayerEventEmitter<PlayerState>()
+        let actor = PlayerActor(
+            config: PlayerConfiguration(),
+            player: transport,
+            watchdog: PlaybackWatchdog(),
+            stateEmitter: stateEmitter,
+            eventEmitter: PlayerEventEmitter<PlayerEvent>()
+        )
+        var states = stateEmitter.stream.makeAsyncIterator()
+        let source = MediaSource(
+            url: URL(string: "https://media.estatia.com/watch/master.m3u8?codec=av1")!
+        )
+
+        try await actor.handle(
+            .loadIdentified(mediaId: "video-terminal", source: source)
+        )
+        _ = await states.next()
+        transport.emitReady()
+        _ = await states.next()
+        try await actor.handle(.play)
+
+        transport.emitFailure(
+            NSError(
+                domain: AVError.errorDomain,
+                code: AVError.Code.decoderNotFound.rawValue
+            )
+        )
+        XCTAssertEqual(await states.next(), .loading)
+        XCTAssertEqual(transport.loadCount, 2)
+
+        // The second failure belongs to the Baseline request; never start
+        // another retry cycle for the same managed media item.
+        transport.emitFailure(
+            NSError(
+                domain: AVError.errorDomain,
+                code: AVError.Code.decoderNotFound.rawValue
+            )
+        )
+        XCTAssertEqual(
+            await states.next(),
+            .error(.decoderUnavailable)
+        )
+        XCTAssertEqual(transport.loadCount, 2)
+
+        try await actor.handle(.release)
+    }
+
+    func testDecoderFailureForExternalMediaDoesNotRewriteItsURL() async throws {
+        let transport = FakePlayerTransport()
+        let stateEmitter = PlayerEventEmitter<PlayerState>()
+        let actor = PlayerActor(
+            config: PlayerConfiguration(),
+            player: transport,
+            watchdog: PlaybackWatchdog(),
+            stateEmitter: stateEmitter,
+            eventEmitter: PlayerEventEmitter<PlayerEvent>()
+        )
+        var states = stateEmitter.stream.makeAsyncIterator()
+        let source = MediaSource(
+            url: URL(string: "https://video.example.net/watch/master.m3u8?token=abc")!
+        )
+
+        try await actor.handle(
+            .loadIdentified(mediaId: "external-video", source: source)
+        )
+        _ = await states.next()
+        transport.emitReady()
+        _ = await states.next()
+        try await actor.handle(.play)
+
+        transport.emitFailure(
+            NSError(
+                domain: AVError.errorDomain,
+                code: AVError.Code.decoderNotFound.rawValue
+            )
+        )
+        XCTAssertEqual(
+            await states.next(),
+            .error(.decoderUnavailable)
+        )
+        XCTAssertEqual(transport.loadCount, 1)
+
+        try await actor.handle(.release)
+    }
+
 
 }
