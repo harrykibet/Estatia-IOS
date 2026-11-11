@@ -429,6 +429,16 @@ public final class PlayerManager: VideoPlaybackTarget {
     }
     
     /// Starts a persistent offline download for a progressive file or HLS package.
+    public func handleBackgroundSessionEvents(
+        identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        offlineDownloadController.handleBackgroundSessionEvents(
+            identifier: identifier,
+            completionHandler: completionHandler
+        )
+    }
+
     public func downloadOffline(mediaId: String, source: MediaSource) async throws {
         try await streamingPipeline.downloadOffline(mediaId: mediaId, source: source)
     }
