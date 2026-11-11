@@ -96,6 +96,10 @@ final class AVPlayerWrapper:
     private let codecNegotiator:
         StreamingCodecNegotiator
 
+    // These values are confined to the serial player queue.
+    private var playbackQualityPreferences = PlaybackQualityPreferences.unrestricted
+    private var isCurrentAssetHLS = false
+
     // MARK: - Initialization
 
     init(
@@ -212,6 +216,8 @@ final class AVPlayerWrapper:
         // Resolve the same codec-aware source before either playback or
         // cache loading so the manifest variant and cache identity agree.
         let negotiatedSource = codecNegotiator.negotiate(source)
+        isCurrentAssetHLS = negotiatedSource.type == .hls
+            || negotiatedSource.url.pathExtension.lowercased() == "m3u8"
 
         let useCache =
             cacheConfiguration != nil &&
@@ -428,6 +434,8 @@ final class AVPlayerWrapper:
         self.playerItem =
             item
 
+        applyPlaybackQuality(to: item)
+
         self.resourceLoader =
             resourceLoader
 
@@ -541,6 +549,35 @@ final class AVPlayerWrapper:
         queue.async { [weak self] in
             self?.playerItem?.preferredPeakBitRate = safeBitrate
         }
+    }
+
+    /// Queues rendition constraints before the corresponding play command.
+    @MainActor
+    func setPlaybackQuality(_ preferences: PlaybackQualityPreferences) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.playbackQualityPreferences = preferences
+            if let item = self.playerItem {
+                self.applyPlaybackQuality(to: item)
+            }
+        }
+    }
+
+    /// AVPlayer performs HLS adaptation within these preferences; it does not
+    /// force one fixed variant. Resolution preferences are HLS-only.
+    private func applyPlaybackQuality(to item: AVPlayerItem) {
+        if isCurrentAssetHLS,
+           let resolution = playbackQualityPreferences.maximumResolution {
+            item.preferredMaximumResolution = CGSize(
+                width: resolution.width,
+                height: resolution.height
+            )
+        } else {
+            item.preferredMaximumResolution = .zero
+        }
+
+        item.preferredPeakBitRate =
+            playbackQualityPreferences.maximumPeakBitrateBps ?? 0
     }
 
     // MARK: - Playback
@@ -680,6 +717,7 @@ final class AVPlayerWrapper:
 
         asset =
             nil
+        isCurrentAssetHLS = false
     }
 
     // MARK: - Session Generation
