@@ -47,6 +47,10 @@ final class DefaultPlayerEngine: PlayerEngine, AVPlayerProviding {
         presentationTransport.setPreferredPeakBitRate(bitrateBps)
     }
 
+    func applyPlaybackQuality(_ preferences: PlaybackQualityPreferences) {
+        presentationTransport.setPlaybackQuality(preferences)
+    }
+
     // MARK: - Streams
     
     var state: AsyncStream<PlayerState> {
