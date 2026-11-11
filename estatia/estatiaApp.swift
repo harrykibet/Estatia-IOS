@@ -7,7 +7,9 @@
 
 import SwiftUI
 import FirebaseCore
+import CorePlayerEngine
 
+@MainActor
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
