@@ -545,6 +545,16 @@ final class AVPlayerWrapper:
         }
     }
 
+    /// Reads the actual transport rate from the same serial queue that owns
+    /// AVPlayer mutations. This detects rate resets that occur without a
+    /// corresponding command from LivePlaybackSpeedController.
+    @MainActor
+    func currentPlaybackRate() -> Float? {
+        queue.sync {
+            player?.rate
+        }
+    }
+
     @MainActor
     func setPreferredPeakBitRate(_ bitrateBps: Double) {
         let safeBitrate = bitrateBps.isFinite ? max(0, bitrateBps) : 0
