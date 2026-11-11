@@ -50,7 +50,7 @@ final class AVPlayerWrapper:
     // MARK: - Resource Loader
 
     private var resourceLoader:
-        MediaCacheResourceLoader?
+        (any AVAssetResourceLoaderDelegate)?
 
     private var timeControlObserver:
         NSKeyValueObservation?
@@ -217,6 +217,17 @@ final class AVPlayerWrapper:
                     cacheConfiguration
             )
 
+        } else if HLSResourceLoader.supports(negotiatedSource) {
+
+            // HLS master/media playlists and their child resources are routed
+            // through this asset's resource loader, preserving the same player.
+            try loadHLS(
+                source:
+                    negotiatedSource,
+                fetcher:
+                    cacheConfiguration?.fetcher ?? URLSessionMediaDataFetcher()
+            )
+
         } else {
 
             loadDirect(
@@ -261,6 +272,62 @@ final class AVPlayerWrapper:
             AVURLAsset(
                 url:
                     cachedURL,
+                options:
+                    nil
+            )
+
+        urlAsset.resourceLoader.setDelegate(
+            loader,
+            queue:
+                resourceLoaderQueue
+        )
+
+        let item =
+            AVPlayerItem(
+                asset:
+                    urlAsset
+            )
+
+        install(
+            asset:
+                urlAsset,
+            item:
+                item,
+            resourceLoader:
+                loader
+        )
+    }
+
+    // MARK: - HLS Load
+
+    private func loadHLS(
+        source:
+            MediaSource,
+        fetcher:
+            any MediaDataFetching
+    ) throws {
+
+        guard let proxiedURL =
+                HLSResourceLoader.proxyURL(
+                    for:
+                        source.url
+                )
+        else {
+            throw PlayerError.invalidSource
+        }
+
+        let loader =
+            HLSResourceLoader(
+                source:
+                    source,
+                fetcher:
+                    fetcher
+            )
+
+        let urlAsset =
+            AVURLAsset(
+                url:
+                    proxiedURL,
                 options:
                     nil
             )
@@ -338,7 +405,7 @@ final class AVPlayerWrapper:
         item:
             AVPlayerItem,
         resourceLoader:
-            MediaCacheResourceLoader?
+            (any AVAssetResourceLoaderDelegate)?
     ) {
 
         self.asset =
