@@ -89,7 +89,8 @@ final class OfflineDownloadControllerTests: XCTestCase {
             localURL: nil,
             failureReason: nil,
             updatedAt: Date(),
-            sourceFingerprint: fingerprint(sourceURL)
+            sourceFingerprint: fingerprint(sourceURL),
+            taskToken: "restored-task"
         )
 
         let encoder = PropertyListEncoder()
@@ -147,7 +148,8 @@ final class OfflineDownloadControllerTests: XCTestCase {
             localURL: nil,
             failureReason: "Network unavailable",
             updatedAt: Date(),
-            sourceFingerprint: fingerprint(sourceURL)
+            sourceFingerprint: fingerprint(sourceURL),
+            taskToken: "restored-task"
         )
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
