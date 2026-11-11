@@ -142,7 +142,10 @@ final class PlaybackAnalyticsTests: XCTestCase {
 
     func testRecordsAnInitialPlaybackFailureWithoutAnActiveSession() {
         let analyticsClient = RecordingAnalyticsClient()
-        let analytics = PlaybackAnalytics(analyticsClient: analyticsClient)
+        let analytics = PlaybackAnalytics(
+            analyticsClient: analyticsClient,
+            metricsClient: NoopMetricsClient()
+        )
 
         analytics.recordFailure(
             .playbackStalled,
