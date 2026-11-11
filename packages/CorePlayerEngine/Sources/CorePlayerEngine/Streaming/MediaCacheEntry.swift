@@ -98,6 +98,12 @@ public actor FileMediaCacheStore {
     private let fileManager:
         FileManager
 
+    private let sizingPolicy:
+        MediaCacheSizingPolicy
+
+    private let availableStorageBytesProvider:
+        @Sendable () -> Int64?
+
     /// Recent reads stay in memory so hot playback does not rewrite
     /// metadata.json on every cache hit.
     private var accessOverrides:
@@ -107,10 +113,19 @@ public actor FileMediaCacheStore {
 
     public init(
         rootDirectory: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        sizingPolicy: MediaCacheSizingPolicy = MediaCacheSizingPolicy(),
+        availableStorageBytesProvider: @escaping @Sendable () -> Int64? = {
+            let attributes = try? FileManager.default.attributesOfFileSystem(
+                forPath: NSHomeDirectory()
+            )
+            return (attributes?[.systemFreeSize] as? NSNumber)?.int64Value
+        }
     ) {
         self.rootDirectory = rootDirectory
         self.fileManager = fileManager
+        self.sizingPolicy = sizingPolicy
+        self.availableStorageBytesProvider = availableStorageBytesProvider
     }
 
     // MARK: - Read
@@ -326,6 +341,11 @@ public actor FileMediaCacheStore {
         try saveEntry(
             entry
         )
+
+        // Apply the cache ceiling on every persisted chunk, not only after
+        // speculative warming. AVAssetResourceLoader uses this same store,
+        // so ordinary playback writes are bounded too.
+        try trimToCurrentStorageBudget()
     }
 
     // MARK: - Metadata
@@ -407,6 +427,15 @@ public actor FileMediaCacheStore {
     }
 
     // MARK: - Eviction
+
+    /// Re-evaluates the storage-aware limit and evicts least-recently-used
+    /// media entries until the persistent playback cache is within budget.
+    public func trimToCurrentStorageBudget() throws {
+        let byteLimit = sizingPolicy.cacheLimitBytes(
+            availableStorageBytes: availableStorageBytesProvider()
+        )
+        try trim(to: byteLimit)
+    }
 
     public func trim(
         to byteLimit: Int64
