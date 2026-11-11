@@ -24,3 +24,8 @@ public protocol AVPlayerProviding: AnyObject {
     /// Applies match-score and environment-derived limits to the current item.
     func setPlaybackQuality(_ preferences: PlaybackQualityPreferences)
 }
+
+public extension AVPlayerProviding {
+    /// Compatibility default for presentation adapters that do not tune HLS.
+    func setPlaybackQuality(_ preferences: PlaybackQualityPreferences) {}
+}
