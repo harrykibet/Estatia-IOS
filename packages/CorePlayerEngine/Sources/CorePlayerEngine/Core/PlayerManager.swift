@@ -58,8 +58,8 @@ public final class PlayerManager: VideoPlaybackTarget {
     private var hasStarted = false
     
     public init(
-        analyticsClient: any AnalyticsClient = NoopAnalyticsClient(),
-        metricsClient: any MetricsClient = NoopMetricsClient()
+        analyticsClient: any AnalyticsClient = FirebaseAnalyticsClient(),
+        metricsClient: any MetricsClient = FirebasePerformanceMetricsClient()
     ) {
         
         let cacheDirectory =
@@ -203,7 +203,7 @@ public final class PlayerManager: VideoPlaybackTarget {
     }
     
     /// Builds a feed coordinator that shares this manager's player pool,
-    /// network recovery, audio session and disk cache.
+    /// network recovery, audio-session and disk cache.
     public func makeFeedPlaybackCoordinator(
         policy: VideoPlaybackPolicy = VideoPlaybackPolicy(),
         onPlaybackReady: @escaping @MainActor @Sendable (String, (any PlayerEngine)?) async -> Void = { _, _ in }
@@ -445,7 +445,7 @@ public final class PlayerManager: VideoPlaybackTarget {
                 generation: transition.generation
             )
         } catch {
-            // A newer explicit pause/play command owns the audio session now.
+            // A newer explicit pause/play command may have claimed the audio session.
             // Never let this stale continuation abandon that newer session.
             guard lifecycleState.isCurrent(transition.generation),
                   activeMediaId == mediaId
@@ -463,135 +463,38 @@ public final class PlayerManager: VideoPlaybackTarget {
     private func pausePlayback(
         lifecycleGeneration: UInt64
     ) async {
-
         stopBitrateMonitoring()
         await orchestrator.pauseCurrent()
-
-        // A newer play, pause, or foreground transition may have claimed the
-        // audio session while the transport pause was suspended.
         guard lifecycleState.isCurrent(lifecycleGeneration) else { return }
         audioSession.abandon()
     }
-    
-    /// Starts a persistent offline download for a progressive file or HLS package.
-    public func handleBackgroundSessionEvents(
-        identifier: String,
-        completionHandler: @escaping () -> Void
-    ) {
-        offlineDownloadController.handleBackgroundSessionEvents(
-            identifier: identifier,
-            completionHandler: completionHandler
-        )
-    }
-
-    public func downloadOffline(mediaId: String, source: MediaSource) async throws {
-        try await streamingPipeline.downloadOffline(mediaId: mediaId, source: source)
-    }
-
-    public func cancelOfflineDownload(mediaId: String) {
-        streamingPipeline.cancelOfflineDownload(mediaId: mediaId)
-    }
-
-    public func removeOfflineDownload(mediaId: String) {
-        streamingPipeline.removeOfflineDownload(mediaId: mediaId)
-    }
-
-    public func observeOfflineDownloads() -> AsyncStream<[OfflineDownloadRecord]> {
-        streamingPipeline.observeOfflineDownloads()
-    }
-
-    public func preload(
-        mediaId: String,
-        source: MediaSource
-    ) async {
-        
-        await orchestrator.preload(
-            mediaId: mediaId,
-            source: source
-        )
-    }
-    
-    public func observeState(
-        mediaId: String
-    ) async -> AsyncStream<PlayerState>? {
-        
-        await orchestrator.observeState(
-            mediaId: mediaId
-        )
-    }
-    
-    public func playerEngine(for mediaId: String) async -> (any PlayerEngine)? {
-        await orchestrator.playerEngine(for: mediaId)
-    }
 
     private func installSystemPlaybackIntegrationIfNeeded() {
-        if !mediaSessionCommandsInstalled {
-            mediaSessionCoordinator.installCommands(
-                onPlay: { [weak self] in
-                    guard let self, let mediaId = self.activeMediaId else {
-                        return .unavailable
-                    }
-                    Task { @MainActor [weak self] in
-                        await self?.resumeFromRemoteCommand(mediaId: mediaId)
-                    }
-                    return .success
-                },
-                onPause: { [weak self] in
-                    guard let self, self.activeMediaId != nil else {
-                        return .unavailable
-                    }
-                    Task { @MainActor [weak self] in
-                        await self?.pause()
-                    }
-                    return .success
-                },
-                onTogglePlayback: { [weak self] in
-                    guard let self, let mediaId = self.activeMediaId else {
-                        return .unavailable
-                    }
-                    Task { @MainActor [weak self] in
-                        await self?.toggleFromRemoteCommand(mediaId: mediaId)
-                    }
-                    return .success
-                },
-                onSeek: { [weak self] seconds in
-                    guard let self,
-                          self.activeMediaId != nil,
-                          seconds.isFinite,
-                          seconds >= 0
-                    else {
-                        return .unavailable
-                    }
-                    Task { @MainActor [weak self] in
-                        await self?.seekFromRemoteCommand(to: seconds)
-                    }
-                    return .success
-                }
-            )
-            mediaSessionCommandsInstalled = true
-        }
-
-        guard !audioSessionObserversInstalled else { return }
-        audioSession.startObserving(
-            onInterruptionBegan: { [weak self] in
-                Task { @MainActor [weak self] in
-                    await self?.handleAudioInterruptionBegan()
+        guard !mediaSessionCommandsInstalled else { return }
+        mediaSessionCoordinator.installCommands(
+            onPlay: { [weak self] mediaId in
+                Task { @MainActor in
+                    await self?.resumeFromRemoteCommand(mediaId: mediaId)
                 }
             },
-            onInterruptionEnded: { [weak self] shouldResume in
-                Task { @MainActor [weak self] in
-                    await self?.handleAudioInterruptionEnded(
-                        shouldResume: shouldResume
-                    )
-                }
-            },
-            onRouteBecameNoisy: { [weak self] in
-                Task { @MainActor [weak self] in
+            onPause: { [weak self] mediaId in
+                Task { @MainActor in
+                    guard self?.activeMediaId == mediaId else { return }
                     await self?.pause()
+                }
+            },
+            onToggle: { [weak self] mediaId in
+                Task { @MainActor in
+                    await self?.toggleFromRemoteCommand(mediaId: mediaId)
+                }
+            },
+            onSeek: { [weak self] seconds in
+                Task { @MainActor in
+                    await self?.seekFromRemoteCommand(to: seconds)
                 }
             }
         )
-        audioSessionObserversInstalled = true
+        mediaSessionCommandsInstalled = true
     }
 
     private func resumeFromRemoteCommand(mediaId: String) async {
@@ -607,8 +510,8 @@ public final class PlayerManager: VideoPlaybackTarget {
             }
 
             if audioInterruptionActive {
-                // PlayerActor records the explicit play intent but keeps its
-                // transport suspended until the system interruption ends.
+                // PlayerActor records the explicit play intent but keeps its transport
+                // suspended until the system interruption ends.
                 return
             }
 
@@ -705,7 +608,7 @@ public final class PlayerManager: VideoPlaybackTarget {
 
         guard activeMediaId == interruption.mediaId else { return }
 
-        // PlayerActor keeps desired playback separate from observed transport
+        // PlayerActor keeps desired playback intent separate from observed transport
         // state. Reading it here respects user play/pause commands issued
         // directly by the player UI while the system owned audio.
         let currentIntent = await orchestrator.shouldResumeAfterInterruption(
