@@ -23,12 +23,9 @@ public final class CdnFailoverMediaDataFetcher: MediaDataFetching, Sendable {
             return try await baseFetcher.fetch(source: source, offset: offset, length: length)
         }
 
-        let initialCDN: Cdn?
-        if let configured = selector.configuredCDN(forHost: source.url.host) {
-            initialCDN = configured
-        } else {
-            initialCDN = await selector.selectBestCdn(forPath: source.url.path)
-        }
+        // Re-evaluate health for each request, even when an earlier cache-warm
+        // step already rewrote the source to a configured CDN hostname.
+        let initialCDN = await selector.selectBestCdn(forPath: source.url.path)
 
         guard let initialCDN,
               let initialSource = Self.source(source, routedTo: initialCDN)
