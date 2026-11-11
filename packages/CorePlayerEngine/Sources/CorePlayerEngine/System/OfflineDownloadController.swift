@@ -573,7 +573,36 @@ public final class OfflineDownloadController:
     }
 
     private static func fingerprint(for url: URL) -> String {
-        SHA256.hash(data: Data(url.absoluteString.utf8))
+        var components = URLComponents(
+            url: url,
+            resolvingAgainstBaseURL: false
+        )
+        components?.fragment = nil
+
+        // Signed CDN credentials rotate independently of the media object.
+        // Keep semantic query parameters (variant/version/format), but omit
+        // common short-lived authentication and signature parameters.
+        let transientNames: Set<String> = [
+            "token", "access_token", "auth", "authorization",
+            "signature", "sig", "expires", "expiry", "policy",
+            "key-pair-id", "jwt", "hdnea", "hdnts"
+        ]
+        let retainedItems = components?.queryItems?.filter { item in
+            let name = item.name.lowercased()
+            return !transientNames.contains(name)
+                && !name.hasPrefix("x-amz-")
+                && !name.hasPrefix("x-goog-")
+                && !name.hasPrefix("x-ms-")
+        }.sorted {
+            if $0.name == $1.name {
+                return ($0.value ?? "") < ($1.value ?? "")
+            }
+            return $0.name < $1.name
+        }
+        components?.queryItems = retainedItems
+
+        let identity = components?.string ?? url.absoluteString
+        return SHA256.hash(data: Data(identity.utf8))
             .map { String(format: "%02x", $0) }
             .joined()
     }
