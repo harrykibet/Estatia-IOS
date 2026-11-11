@@ -103,7 +103,7 @@ public final class PlaybackAnalytics {
         event: PlayerEvent,
         at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
     ) {
-        guard mediaId != nil else { return }
+        guard let mediaId else { return }
 
         switch event {
         case .playbackStarted:
