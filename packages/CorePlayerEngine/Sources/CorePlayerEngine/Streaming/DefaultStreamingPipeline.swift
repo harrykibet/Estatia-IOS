@@ -26,7 +26,7 @@ public final class DefaultStreamingPipeline:
             MediaCacheWarmer,
         offlineController:
             OfflineDownloadController =
-            OfflineDownloadController(),
+            OfflineDownloadController.shared,
         measurer:
             LatencyMeasurer =
             DefaultLatencyMeasurer(),
