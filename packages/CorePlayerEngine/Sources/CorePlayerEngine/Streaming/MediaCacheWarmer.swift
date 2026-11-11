@@ -141,40 +141,30 @@ public final class URLSessionMediaDataFetcher:
         from response: HTTPURLResponse
     ) -> Int64? {
 
-        guard let header =
-                response.value(
-                    forHTTPHeaderField:
-                        "Content-Range"
-                )
-        else {
+        if let header =
+            response.value(
+                forHTTPHeaderField:
+                    "Content-Range"
+            ),
+           let slash = header.lastIndex(of: "/") {
 
-            return nil
+            let totalPart =
+                header[
+                    header.index(
+                        after: slash
+                    )...
+                ]
+
+            if totalPart != "*" {
+                return Int64(totalPart)
+            }
         }
 
-        // Example:
-        // bytes 0-524287/9834212
-        guard let slash =
-                header.lastIndex(
-                    of: "/"
-                )
-        else {
-            return nil
-        }
-
-        let totalPart =
-            header[
-                header.index(
-                    after: slash
-                )...
-            ]
-
-        guard totalPart != "*" else {
-            return nil
-        }
-
-        return Int64(
-            totalPart
-        )
+        // For HTTP 200, URLSession may transparently decompress the body,
+        // so Content-Length can describe the encoded transfer rather than the
+        // bytes handed to the caller. The resource loader infers that length
+        // from response.data.count instead.
+        return nil
     }
 }
 
