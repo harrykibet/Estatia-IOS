@@ -13,7 +13,7 @@ final class LivePlaybackSpeedPolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(rate, 1.03, accuracy: 0.0001)
+        XCTAssertEqual(rate ?? .nan, 1.03, accuracy: 0.0001)
     }
 
     func testPlaybackCloserToLiveThanRecommendedSlowsDownWithinAndroidBounds() {
@@ -24,7 +24,7 @@ final class LivePlaybackSpeedPolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(rate, 0.97, accuracy: 0.0001)
+        XCTAssertEqual(rate ?? .nan, 0.97, accuracy: 0.0001)
     }
 
     func testSmallOffsetErrorKeepsNormalSpeed() {
@@ -46,7 +46,7 @@ final class LivePlaybackSpeedPolicyTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(rate, 1.01, accuracy: 0.0001)
+        XCTAssertEqual(rate ?? .nan, 1.01, accuracy: 0.0001)
     }
 
     func testInvalidOrMissingLiveTimingDoesNotProduceARate() {
@@ -117,9 +117,9 @@ final class LivePlaybackSpeedControllerTests: XCTestCase {
             at: 11
         )
 
-        XCTAssertEqual(first, 1.03, accuracy: 0.0001)
-        XCTAssertEqual(throttled, 1.03, accuracy: 0.0001)
-        XCTAssertEqual(next, 0.97, accuracy: 0.0001)
+        XCTAssertEqual(first ?? .nan, 1.03, accuracy: 0.0001)
+        XCTAssertEqual(throttled ?? .nan, 1.03, accuracy: 0.0001)
+        XCTAssertEqual(next ?? .nan, 0.97, accuracy: 0.0001)
         XCTAssertEqual(player.appliedRates, [1.03, 0.97])
     }
 
