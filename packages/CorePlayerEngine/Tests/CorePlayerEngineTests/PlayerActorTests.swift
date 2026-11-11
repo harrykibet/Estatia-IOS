@@ -719,4 +719,46 @@ final class PlayerActorTests: XCTestCase {
     }
 
 
+
+    func testDecoderFailureBeforePlaybackDoesNotTriggerFallback() async throws {
+        let transport = FakePlayerTransport()
+        let stateEmitter = PlayerEventEmitter<PlayerState>()
+        let actor = PlayerActor(
+            config: PlayerConfiguration(),
+            player: transport,
+            watchdog: PlaybackWatchdog(),
+            stateEmitter: stateEmitter,
+            eventEmitter: PlayerEventEmitter<PlayerEvent>()
+        )
+        var states = stateEmitter.stream.makeAsyncIterator()
+        let source = MediaSource(
+            url: URL(string: "https://media.estatia.com/watch/master.m3u8?codec=av1")!
+        )
+
+        try await actor.handle(
+            .loadIdentified(mediaId: "preloaded-video", source: source)
+        )
+        _ = await states.next()
+        transport.emitReady()
+        _ = await states.next()
+
+        // A preloaded neighbor has no active playback intent; a decoder error
+        // must not cause a second, unnecessary rendition load.
+        transport.emitFailure(
+            NSError(
+                domain: AVError.errorDomain,
+                code: AVError.Code.decoderNotFound.rawValue
+            )
+        )
+        let failureState = await states.next()
+
+        XCTAssertEqual(failureState, .error(.decoderUnavailable))
+        XCTAssertEqual(transport.loadCount, 1)
+        let playbackIntent = await actor.shouldResumeAfterInterruption
+        XCTAssertFalse(playbackIntent)
+
+        try await actor.handle(.release)
+    }
+
+
 }
