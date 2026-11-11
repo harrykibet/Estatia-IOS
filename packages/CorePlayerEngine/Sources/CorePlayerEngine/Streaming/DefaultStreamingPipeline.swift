@@ -26,7 +26,7 @@ public final class DefaultStreamingPipeline:
             MediaCacheWarmer,
         offlineController:
             OfflineDownloadController =
-            OfflineDownloadController(),
+            OfflineDownloadController.shared,
         measurer:
             LatencyMeasurer =
             DefaultLatencyMeasurer(),
@@ -138,6 +138,22 @@ public final class DefaultStreamingPipeline:
                     priority
             )
         )
+    }
+
+    public func downloadOffline(mediaId: String, source: MediaSource) async throws {
+        try offlineController.scheduleDownload(mediaId: mediaId, source: source)
+    }
+
+    public func cancelOfflineDownload(mediaId: String) {
+        offlineController.cancelDownload(mediaId: mediaId)
+    }
+
+    public func removeOfflineDownload(mediaId: String) {
+        offlineController.removeDownload(mediaId: mediaId)
+    }
+
+    public func observeOfflineDownloads() -> AsyncStream<[OfflineDownloadRecord]> {
+        offlineController.observeDownloads()
     }
 
     private static func isEstatiaMediaHost(_ host: String?) -> Bool {

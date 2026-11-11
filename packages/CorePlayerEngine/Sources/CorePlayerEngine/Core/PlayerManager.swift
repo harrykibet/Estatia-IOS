@@ -13,6 +13,8 @@ public final class PlayerManager: VideoPlaybackTarget {
     private let orchestrator: PlaybackOrchestrator
 
     private let streamingPipeline: StreamingPipeline
+
+    private let offlineDownloadController: OfflineDownloadController
     
     private let networkMonitor: NetworkConnectivityProviding
     
@@ -78,12 +80,16 @@ public final class PlayerManager: VideoPlaybackTarget {
             selector: cdnSelector
         )
 
+        let offlineDownloadController = OfflineDownloadController.shared
+
         let cacheConfiguration =
             PlayerCacheConfiguration(
                 store:
                     cacheStore,
                 fetcher:
-                    cdnFetcher
+                    cdnFetcher,
+                offlineResolver:
+                    offlineDownloadController
             )
         
         let pool =
@@ -110,6 +116,8 @@ public final class PlayerManager: VideoPlaybackTarget {
                     cdns,
                 cacheWarmer:
                     cacheWarmer,
+                offlineController:
+                    offlineDownloadController,
                 cdnSelector:
                     cdnSelector
             )
@@ -125,6 +133,7 @@ public final class PlayerManager: VideoPlaybackTarget {
         self.pool = pool
         self.orchestrator = orchestrator
         self.streamingPipeline = streamingPipeline
+        self.offlineDownloadController = offlineDownloadController
         self.networkMonitor = networkMonitor
         self.networkRecovery = NetworkRecoveryCoordinator(
             network: networkMonitor,
@@ -419,6 +428,33 @@ public final class PlayerManager: VideoPlaybackTarget {
         audioSession.abandon()
     }
     
+    /// Starts a persistent offline download for a progressive file or HLS package.
+    public func handleBackgroundSessionEvents(
+        identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        offlineDownloadController.handleBackgroundSessionEvents(
+            identifier: identifier,
+            completionHandler: completionHandler
+        )
+    }
+
+    public func downloadOffline(mediaId: String, source: MediaSource) async throws {
+        try await streamingPipeline.downloadOffline(mediaId: mediaId, source: source)
+    }
+
+    public func cancelOfflineDownload(mediaId: String) {
+        streamingPipeline.cancelOfflineDownload(mediaId: mediaId)
+    }
+
+    public func removeOfflineDownload(mediaId: String) {
+        streamingPipeline.removeOfflineDownload(mediaId: mediaId)
+    }
+
+    public func observeOfflineDownloads() -> AsyncStream<[OfflineDownloadRecord]> {
+        streamingPipeline.observeOfflineDownloads()
+    }
+
     public func preload(
         mediaId: String,
         source: MediaSource

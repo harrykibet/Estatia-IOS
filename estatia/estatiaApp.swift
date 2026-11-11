@@ -7,7 +7,9 @@
 
 import SwiftUI
 import FirebaseCore
+import CorePlayerUI
 
+@MainActor
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
@@ -15,6 +17,17 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         FirebaseApp.configure()
         return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        PlayerBackgroundSessionEvents.handle(
+            identifier: identifier,
+            completionHandler: completionHandler
+        )
     }
 }
 

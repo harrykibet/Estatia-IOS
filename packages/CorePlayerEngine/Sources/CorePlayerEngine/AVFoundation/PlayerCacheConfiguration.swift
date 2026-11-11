@@ -22,6 +22,8 @@ struct PlayerCacheConfiguration: Sendable {
 
     let keyFactory: MediaCacheKeyProviding
 
+    let offlineResolver: (any OfflineMediaResolving)?
+
     /// Maximum amount loaded by one AVAsset resource request before
     /// yielding back to AVFoundation.
     let requestChunkSize: Int
@@ -31,7 +33,8 @@ struct PlayerCacheConfiguration: Sendable {
         fetcher: MediaDataFetching = URLSessionMediaDataFetcher(),
         keyFactory: MediaCacheKeyProviding =
             DefaultMediaCacheKeyFactory(),
-        requestChunkSize: Int = 512 * 1024
+        requestChunkSize: Int = 512 * 1024,
+        offlineResolver: (any OfflineMediaResolving)? = nil
     ) {
         precondition(
             requestChunkSize > 0
@@ -41,5 +44,6 @@ struct PlayerCacheConfiguration: Sendable {
         self.fetcher = fetcher
         self.keyFactory = keyFactory
         self.requestChunkSize = requestChunkSize
+        self.offlineResolver = offlineResolver
     }
 }

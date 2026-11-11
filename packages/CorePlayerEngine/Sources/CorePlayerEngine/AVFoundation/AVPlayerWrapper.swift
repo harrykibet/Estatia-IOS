@@ -143,6 +143,20 @@ final class AVPlayerWrapper:
             MediaSource
     ) async throws {
 
+        // Prefer a completed local artifact when the original logical source
+        // matches the persisted offline-download record. Network playback and
+        // the media identity remain unchanged when no such artifact exists.
+        let playbackSource: MediaSource
+        if let resolver = cacheConfiguration?.offlineResolver,
+           let offlineSource = await resolver.offlineSource(
+                for: mediaId,
+                originalSource: source
+           ) {
+            playbackSource = offlineSource
+        } else {
+            playbackSource = source
+        }
+
         try await withCheckedThrowingContinuation {
             (
                 continuation:
@@ -170,7 +184,7 @@ final class AVPlayerWrapper:
                         mediaId:
                             mediaId,
                         source:
-                            source
+                            playbackSource
                     )
 
                     continuation.resume()
