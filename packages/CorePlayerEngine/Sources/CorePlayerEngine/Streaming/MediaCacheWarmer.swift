@@ -141,42 +141,37 @@ public final class URLSessionMediaDataFetcher:
         from response: HTTPURLResponse
     ) -> Int64? {
 
-        guard let header =
-                response.value(
-                    forHTTPHeaderField:
-                        "Content-Range"
-                )
-        else {
+        if let header =
+            response.value(
+                forHTTPHeaderField:
+                    "Content-Range"
+            ),
+           let slash = header.lastIndex(of: "/") {
 
-            return nil
+            let totalPart =
+                header[
+                    header.index(
+                        after: slash
+                    )...
+                ]
+
+            if totalPart != "*" {
+                return Int64(totalPart)
+            }
         }
 
-        // Example:
-        // bytes 0-524287/9834212
-        guard let slash =
-                header.lastIndex(
-                    of: "/"
-                )
-        else {
-            return nil
+        // A server that ignores Range returns the complete representation with
+        // HTTP 200 and Content-Length instead of a Content-Range header.
+        if response.statusCode == 200,
+           let contentLength = response.value(
+                forHTTPHeaderField:
+                    "Content-Length"
+           ) {
+            return Int64(contentLength)
         }
 
-        let totalPart =
-            header[
-                header.index(
-                    after: slash
-                )...
-            ]
-
-        guard totalPart != "*" else {
-            return nil
-        }
-
-        return Int64(
-            totalPart
-        )
-    }
-}
+        return nil
+    }}
 
 public struct MediaCacheWarmRequest:
     Sendable {
