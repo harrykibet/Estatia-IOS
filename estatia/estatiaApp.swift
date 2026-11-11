@@ -16,6 +16,17 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         FirebaseApp.configure()
         return true
     }
+
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        PlayerManager.shared.handleBackgroundSessionEvents(
+            identifier: identifier,
+            completionHandler: completionHandler
+        )
+    }
 }
 
 @main
