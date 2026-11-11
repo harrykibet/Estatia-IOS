@@ -40,6 +40,9 @@ public protocol AVPlayerProviding: AnyObject {
     /// Current AVPlayer transport rate, when the adapter can observe it.
     var currentPlaybackRate: Float? { get }
 
+    /// Current media position when the active item is ready and observable.
+    var currentPlaybackPosition: TimeInterval? { get }
+
     /// Sets AVPlayerItem.preferredPeakBitRate. Pass zero to remove the cap.
     func setPreferredPeakBitRate(_ bitrateBps: Double)
 
@@ -58,6 +61,15 @@ public extension AVPlayerProviding {
     /// expose live timing or tune HLS.
     var livePlaybackTiming: LivePlaybackTiming? { nil }
     var currentPlaybackRate: Float? { presentationPlayer?.rate }
+    var currentPlaybackPosition: TimeInterval? {
+        guard let seconds = presentationPlayer?.currentTime().seconds,
+              seconds.isFinite,
+              seconds >= 0
+        else {
+            return nil
+        }
+        return seconds
+    }
     func setPlaybackQuality(_ preferences: PlaybackQualityPreferences) {}
     func setLivePlaybackEnabled(_ enabled: Bool) {}
     func setLivePlaybackSpeed(_ speed: Float) {}

@@ -60,6 +60,9 @@ public final class PlayerPool {
     private var activePlayers:
         [String: ManagedPlayer] = [:]
 
+    /// Position snapshots are keyed by media identity, not by pooled engine.
+    private var playbackPositions: [String: TimeInterval] = [:]
+
     private var idlePlayers:
         [ManagedPlayer] = []
 
@@ -232,10 +235,13 @@ public final class PlayerPool {
         let managed =
             try await acquirePlayer()
 
+        let restorationPosition = playbackPositions[mediaId]
+
         do {
             try Task.checkCancellation()
 
             try await managed.perform {
+                managed.engine.setInitialPlaybackPosition(restorationPosition)
                 try await managed.engine.load(
                     mediaId: mediaId,
                     source: source
@@ -351,6 +357,8 @@ public final class PlayerPool {
         guard let managed = activePlayers.removeValue(forKey: mediaId) else {
             return
         }
+
+        await savePlaybackPosition(for: managed, mediaId: mediaId)
 
         do {
             try await managed.perform {
@@ -600,6 +608,9 @@ public final class PlayerPool {
             forKey: mediaId
         )
 
+        await savePlaybackPosition(for: evictable, mediaId: mediaId)
+        try Task.checkCancellation()
+
         do {
             try await evictable.perform {
                 try await evictable.engine.stop()
@@ -622,6 +633,33 @@ public final class PlayerPool {
         evictable.markIdle()
 
         return evictable
+    }
+
+    /// Capture transport position before stop() resets the player.
+    private func savePlaybackPosition(
+        for managed: ManagedPlayer,
+        mediaId: String
+    ) async {
+        let position: TimeInterval
+
+        if let provider = managed.engine as? any AVPlayerProviding {
+            guard let currentPosition = provider.currentPlaybackPosition else {
+                return
+            }
+            position = currentPosition
+        } else {
+            let state = await managed.engine.currentState
+            guard state.isSeekable else {
+                return
+            }
+            position = await managed.engine.currentTime
+        }
+
+        guard position.isFinite, position >= 0 else {
+            return
+        }
+
+        playbackPositions[mediaId] = position
     }
 
     private func validateAcquisition(

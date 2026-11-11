@@ -100,6 +100,7 @@ final class AVPlayerWrapper:
     private var playbackQualityPreferences = PlaybackQualityPreferences.unrestricted
     private var isCurrentAssetHLS = false
     private var isLivePlaybackEnabled = false
+    private var initialPlaybackPosition: TimeInterval?
 
     // MARK: - Initialization
 
@@ -466,7 +467,10 @@ final class AVPlayerWrapper:
 
                 switch event {
                 case .ready:
-                    self.onReady?()
+                    self.restoreInitialPlaybackPosition(generation: generation) {
+                        guard self.isCurrentSession(generation) else { return }
+                        self.onReady?()
+                    }
 
                 case .playbackCompleted:
                     self.onCompletion?()
@@ -552,6 +556,75 @@ final class AVPlayerWrapper:
     func currentPlaybackRate() -> Float? {
         queue.sync {
             player?.rate
+        }
+    }
+
+    /// Reads the current media time from the serialized AVPlayer queue.
+    /// Nil means the item is not yet ready or its time is invalid.
+    @MainActor
+    func currentPlaybackPosition() -> TimeInterval? {
+        queue.sync {
+            guard let player,
+                  let item = playerItem,
+                  item.status == .readyToPlay
+            else {
+                return nil
+            }
+
+            let seconds = player.currentTime().seconds
+            guard seconds.isFinite, seconds >= 0 else {
+                return nil
+            }
+            return seconds
+        }
+    }
+
+    /// Sets or clears the one-shot position for the next loaded item.
+    @MainActor
+    func setInitialPlaybackPosition(_ seconds: TimeInterval?) {
+        let safePosition = seconds.flatMap { value in
+            value.isFinite && value >= 0 ? value : nil
+        }
+        queue.async { [weak self] in
+            self?.initialPlaybackPosition = safePosition
+        }
+    }
+
+    /// Waits for an initial seek before signalling item readiness to PlayerActor.
+    @MainActor
+    private func restoreInitialPlaybackPosition(
+        generation: UInt64,
+        completion: @escaping @MainActor @Sendable () -> Void
+    ) {
+        queue.async { [weak self] in
+            guard let self,
+                  self.isCurrentSession(generation)
+            else {
+                // A delayed readiness callback from a replaced item must not
+                // consume the pending position intended for the new session.
+                Task { @MainActor in completion() }
+                return
+            }
+
+            guard let seconds = self.initialPlaybackPosition,
+                  let player = self.player
+            else {
+                Task { @MainActor in completion() }
+                return
+            }
+
+            self.initialPlaybackPosition = nil
+            let target = CMTime(
+                seconds: seconds,
+                preferredTimescale: 600
+            )
+            player.seek(
+                to: target,
+                toleranceBefore: .zero,
+                toleranceAfter: .zero
+            ) { _ in
+                Task { @MainActor in completion() }
+            }
         }
     }
 
