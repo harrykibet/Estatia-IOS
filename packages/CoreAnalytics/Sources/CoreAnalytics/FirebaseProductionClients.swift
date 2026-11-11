@@ -174,18 +174,19 @@ public final class FirebasePerformanceMetricsClient: MetricsClient {
                 )
                 .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
 
-            guard !normalizedKey.isEmpty,
+            let attributeName = String(normalizedKey.prefix(32))
+            guard !attributeName.isEmpty,
                   !excludedAttributeNames.contains(normalizedKey),
                   !normalizedKey.hasPrefix("firebase_"),
                   !normalizedKey.hasPrefix("google_"),
                   !normalizedKey.hasPrefix("ga_"),
-                  attributes[normalizedKey] == nil,
+                  attributes[attributeName] == nil,
                   attributes.count < 5
             else {
                 continue
             }
 
-            attributes[String(normalizedKey.prefix(32))] = String(value.prefix(100))
+            attributes[attributeName] = String(value.prefix(100))
         }
 
         return attributes
