@@ -971,6 +971,8 @@ private extension PlayerError {
             return "A network error interrupted playback."
         case .decodingFailed:
             return "The media could not be decoded."
+        case .decoderUnavailable:
+            return "This device could not initialize a decoder for the stream."
         case .playbackStalled:
             return "Playback stalled and could not recover."
         case .seekFailed:
