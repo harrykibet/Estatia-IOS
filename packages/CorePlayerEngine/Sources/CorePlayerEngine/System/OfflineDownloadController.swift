@@ -40,9 +40,10 @@ public final class OfflineDownloadController:
     private var backgroundCompletionHandlers: [String: () -> Void] = [:]
 
     public init(
-        rootDirectory: URL = OfflineDownloadController.defaultRootDirectory(),
+        rootDirectory: URL? = nil,
         usesBackgroundSessions: Bool = true
     ) {
+        let rootDirectory = rootDirectory ?? Self.defaultRootDirectory()
         self.rootDirectory = rootDirectory
         self.registryURL = rootDirectory.appendingPathComponent("downloads.plist")
         self.usesBackgroundSessions = usesBackgroundSessions
@@ -254,8 +255,10 @@ public final class OfflineDownloadController:
                 continuation.yield(self.snapshot())
             }
             continuation.onTermination = { [weak self] _ in
-                self?.stateQueue.async {
-                    self?.observers.removeValue(forKey: observerID)
+                guard let self else { return }
+                self.stateQueue.async { [weak self] in
+                    guard let self else { return }
+                    self.observers.removeValue(forKey: observerID)
                 }
             }
         }
