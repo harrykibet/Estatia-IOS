@@ -43,6 +43,9 @@ final class VideoPlaybackCoordinatorTests: XCTestCase {
         private(set) var playRequests:
             [String] = []
 
+        private(set) var forwardedMatchScores:
+            [Double] = []
+
         private(set) var preloadRequests:
             [String] = []
 
@@ -67,6 +70,17 @@ final class VideoPlaybackCoordinatorTests: XCTestCase {
 
             activeMediaId =
                 mediaId
+        }
+
+        func playWithEngineReady(
+            mediaId: String,
+            source: MediaSource,
+            matchScore: Double,
+            onEngineReady: @escaping @MainActor @Sendable ((any PlayerEngine)?) async -> Void
+        ) async throws {
+            forwardedMatchScores.append(matchScore)
+            try await play(mediaId: mediaId, source: source)
+            await onEngineReady(nil)
         }
 
         func preload(
@@ -264,6 +278,23 @@ final class VideoPlaybackCoordinatorTests: XCTestCase {
             playback.activeMediaId,
             "current"
         )
+    }
+
+    func testVisibleItemForwardsMatchScoreToPlaybackTarget() async {
+        let playback = FakePlayback()
+        let streaming = FakeStreamingPipeline()
+        let coordinator = makeCoordinator(
+            playback: playback,
+            streaming: streaming
+        )
+
+        coordinator.onItemVisible(makeItem("high-match", score: 0.97))
+
+        await waitUntil {
+            playback.forwardedMatchScores == [0.97]
+        }
+
+        XCTAssertEqual(playback.playRequests, ["high-match"])
     }
 
     func testPlaybackReadyCallbackRunsOnlyAfterVisiblePlayCompletes() async {
