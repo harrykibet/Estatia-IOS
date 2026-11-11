@@ -40,11 +40,6 @@ public final class CdnSelector: Sendable {
         return available.first ?? candidates.first
     }
 
-    public func configuredCDN(forHost host: String?) -> Cdn? {
-        guard let host = host?.lowercased() else { return nil }
-        return cdns.first { $0.baseURL.host?.lowercased() == host }
-    }
-
     public func recordFailure(for cdn: Cdn) async {
         await healthMonitor.recordFailure(for: cdn)
     }
