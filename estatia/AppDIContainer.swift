@@ -131,7 +131,7 @@ public final class AppDIContainer {
             // Wire MVVM for Search
             let propertyRemoteForSearch: PropertyRemoteDataSource = NoopPropertyRemoteDataSource()
             let propertyRepoForSearch = RemotePropertyRepository(remote: propertyRemoteForSearch)
-            let searchVM = FeatureSearch.SearchViewModel(repository: propertyRemoteForSearch == nil ? nil : propertyRepoForSearch)
+            let searchVM = FeatureSearch.SearchViewModel(repository: propertyRepoForSearch)
             return AnyView(FeatureSearch.SearchView(viewModel: searchVM))
 
         case .property:
