@@ -408,10 +408,13 @@ public final class MediaCacheWarmer:
             }
         }
 
+        // Preserve a caller-supplied warmer ceiling, then apply the
+        // store's current storage-aware limit as a second guard.
         try? await store.trim(
             to:
                 sizingPolicy.maximumCacheBytes
         )
+        try? await store.trimToCurrentStorageBudget()
 
         let elapsed =
             startTime.duration(
