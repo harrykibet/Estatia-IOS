@@ -569,8 +569,8 @@ final class AVPlayerWrapper:
         if isCurrentAssetHLS,
            let resolution = playbackQualityPreferences.maximumResolution {
             item.preferredMaximumResolution = CGSize(
-                width: resolution.width,
-                height: resolution.height
+                width: CGFloat(resolution.width),
+                height: CGFloat(resolution.height)
             )
         } else {
             item.preferredMaximumResolution = .zero
