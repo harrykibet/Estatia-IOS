@@ -165,9 +165,14 @@ final class PlaybackAnalyticsTests: XCTestCase {
             metricsClient: metricsClient
         )
 
-        analytics.beginSession(mediaId: "bad-clock", startedAt: 10)
+        analytics.beginSession(mediaId: "backwards-clock", startedAt: 10)
         analytics.observe(state: .playing, at: 9)
         analytics.observe(state: .paused, at: 8)
+        analytics.finishSession(at: 8)
+
+        analytics.beginSession(mediaId: "non-finite-clock", startedAt: 1)
+        analytics.observe(state: .playing, at: .nan)
+        analytics.observe(state: .paused, at: .infinity)
 
         XCTAssertTrue(metricsClient.durations.isEmpty)
     }
