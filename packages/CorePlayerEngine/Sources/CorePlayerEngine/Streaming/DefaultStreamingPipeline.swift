@@ -35,7 +35,9 @@ public final class DefaultStreamingPipeline:
             DefaultMediaCacheKeyFactory(),
         codecNegotiator:
             StreamingCodecNegotiator =
-            StreamingCodecNegotiator()
+            StreamingCodecNegotiator(),
+        cdnSelector:
+            CdnSelector? = nil
     ) {
         self.cacheWarmer =
             cacheWarmer
@@ -44,12 +46,13 @@ public final class DefaultStreamingPipeline:
             offlineController
 
         self.cdnSelector =
-            cdns.isEmpty
-            ? nil
-            : CdnSelector(
-                cdns: cdns,
-                measurer: measurer
-            )
+            cdnSelector ??
+            (cdns.isEmpty
+                ? nil
+                : CdnSelector(
+                    cdns: cdns,
+                    measurer: measurer
+                ))
 
         self.cacheKeyFactory =
             cacheKeyFactory
@@ -87,7 +90,8 @@ public final class DefaultStreamingPipeline:
         var networkSource =
             negotiatedSource
 
-        if let selector =
+        if Self.isEstatiaMediaHost(negotiatedSource.url.host),
+           let selector =
             cdnSelector,
            let best =
             await selector.selectBestCdn(
@@ -134,5 +138,10 @@ public final class DefaultStreamingPipeline:
                     priority
             )
         )
+    }
+
+    private static func isEstatiaMediaHost(_ host: String?) -> Bool {
+        guard let host = host?.lowercased() else { return false }
+        return host == "estatia.com" || host.hasSuffix(".estatia.com")
     }
 }
