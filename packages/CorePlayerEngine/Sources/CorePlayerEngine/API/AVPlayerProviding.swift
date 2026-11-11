@@ -20,4 +20,7 @@ public protocol AVPlayerProviding: AnyObject {
 
     /// Sets AVPlayerItem.preferredPeakBitRate. Pass zero to remove the cap.
     func setPreferredPeakBitRate(_ bitrateBps: Double)
+
+    /// Applies match-score and environment-derived limits to the current item.
+    func setPlaybackQuality(_ preferences: PlaybackQualityPreferences)
 }
