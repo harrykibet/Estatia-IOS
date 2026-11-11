@@ -24,9 +24,10 @@ public final class OfflineDownloadController:
         qos: .utility
     )
     private let delegateQueue: OperationQueue
+    private let usesBackgroundSessions: Bool
     private var progressiveSession: URLSession!
     #if os(iOS)
-    private let hlsSession: AVAssetDownloadURLSession
+    private var hlsSession: AVAssetDownloadURLSession?
     #endif
 
     // All properties below are confined to stateQueue.
@@ -36,9 +37,13 @@ public final class OfflineDownloadController:
     private let backgroundCompletionLock = NSLock()
     private var backgroundCompletionHandlers: [String: () -> Void] = [:]
 
-    public init(rootDirectory: URL = OfflineDownloadController.defaultRootDirectory()) {
+    public init(
+        rootDirectory: URL = OfflineDownloadController.defaultRootDirectory(),
+        usesBackgroundSessions: Bool = true
+    ) {
         self.rootDirectory = rootDirectory
         self.registryURL = rootDirectory.appendingPathComponent("downloads.plist")
+        self.usesBackgroundSessions = usesBackgroundSessions
 
         let delegateQueue = OperationQueue()
         delegateQueue.name = "com.estatia.coreplayerengine.offline-download-delegates"
@@ -48,30 +53,29 @@ public final class OfflineDownloadController:
         super.init()
 
         #if os(iOS)
-        let progressiveConfiguration = URLSessionConfiguration.background(
-            withIdentifier: Self.progressiveBackgroundSessionIdentifier
-        )
-        progressiveConfiguration.isDiscretionary = false
-        progressiveConfiguration.sessionSendsLaunchEvents = true
+        let progressiveConfiguration: URLSessionConfiguration
+        if usesBackgroundSessions {
+            let background = URLSessionConfiguration.background(
+                withIdentifier: Self.progressiveBackgroundSessionIdentifier
+            )
+            background.isDiscretionary = false
+            background.sessionSendsLaunchEvents = true
+            progressiveConfiguration = background
+        } else {
+            progressiveConfiguration = .ephemeral
+        }
         self.progressiveSession = URLSession(
             configuration: progressiveConfiguration,
             delegate: self,
             delegateQueue: delegateQueue
         )
 
-        let configuration = URLSessionConfiguration.background(
-            withIdentifier: Self.hlsBackgroundSessionIdentifier
-        )
-        configuration.isDiscretionary = false
-        configuration.sessionSendsLaunchEvents = true
-        self.hlsSession = AVAssetDownloadURLSession(
-            configuration: configuration,
-            assetDownloadDelegate: self,
-            delegateQueue: delegateQueue
-        )
+        if usesBackgroundSessions {
+            self.hlsSession = makeHLSDownloadSession()
+        }
         #else
         self.progressiveSession = URLSession(
-            configuration: .default,
+            configuration: .ephemeral,
             delegate: self,
             delegateQueue: delegateQueue
         )
@@ -172,7 +176,8 @@ public final class OfflineDownloadController:
                     assetOptions["AVURLAssetHTTPHeaderFieldsKey"] = headers
                 }
                 let asset = AVURLAsset(url: source.url, options: assetOptions)
-                guard let downloadTask = hlsSession.makeAssetDownloadTask(
+                let session = hlsSession ?? makeHLSDownloadSession()
+                guard let downloadTask = session.makeAssetDownloadTask(
                     asset: asset,
                     assetTitle: mediaId,
                     assetArtworkData: nil,
@@ -458,12 +463,27 @@ public final class OfflineDownloadController:
         }
     }
 
+    #if os(iOS)
+    private func makeHLSDownloadSession() -> AVAssetDownloadURLSession {
+        let configuration = URLSessionConfiguration.background(
+            withIdentifier: Self.hlsBackgroundSessionIdentifier
+        )
+        configuration.isDiscretionary = false
+        configuration.sessionSendsLaunchEvents = true
+        return AVAssetDownloadURLSession(
+            configuration: configuration,
+            assetDownloadDelegate: self,
+            delegateQueue: delegateQueue
+        )
+    }
+    #endif
+
     private func restoreActiveTasks() {
         progressiveSession.getAllTasks { [weak self] activeTasks in
             self?.restore(tasks: activeTasks)
         }
         #if os(iOS)
-        hlsSession.getAllTasks { [weak self] activeTasks in
+        hlsSession?.getAllTasks { [weak self] activeTasks in
             self?.restore(tasks: activeTasks)
         }
         #endif
