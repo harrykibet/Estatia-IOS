@@ -43,12 +43,24 @@ final class DefaultPlayerEngine: PlayerEngine, AVPlayerProviding {
         presentationTransport.observedBitrateBps()
     }
 
+    var livePlaybackTiming: LivePlaybackTiming? {
+        presentationTransport.livePlaybackTimingSnapshot()
+    }
+
     func setPreferredPeakBitRate(_ bitrateBps: Double) {
         presentationTransport.setPreferredPeakBitRate(bitrateBps)
     }
 
     func applyPlaybackQuality(_ preferences: PlaybackQualityPreferences) {
         presentationTransport.setPlaybackQuality(preferences)
+    }
+
+    func setLivePlaybackEnabled(_ enabled: Bool) {
+        presentationTransport.setLivePlaybackEnabled(enabled)
+    }
+
+    func setLivePlaybackSpeed(_ speed: Float) {
+        presentationTransport.setLivePlaybackSpeed(speed)
     }
 
     // MARK: - Streams
