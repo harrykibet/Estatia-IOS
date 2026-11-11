@@ -33,7 +33,8 @@ public final class OfflineDownloadController:
     private var records: [String: OfflineDownloadRecord] = [:]
     private var tasks: [String: URLSessionTask] = [:]
     private var observers: [UUID: AsyncStream<[OfflineDownloadRecord]>.Continuation] = [:]
-    private var backgroundCompletionHandlers: [String: @Sendable () -> Void] = [:]
+    private let backgroundCompletionLock = NSLock()
+    private var backgroundCompletionHandlers: [String: () -> Void] = [:]
 
     public init(rootDirectory: URL = OfflineDownloadController.defaultRootDirectory()) {
         self.rootDirectory = rootDirectory
@@ -97,7 +98,7 @@ public final class OfflineDownloadController:
     /// background events for one of this controller's sessions.
     public func handleBackgroundSessionEvents(
         identifier: String,
-        completionHandler: @escaping @Sendable () -> Void
+        completionHandler: @escaping () -> Void
     ) {
         guard identifier == Self.progressiveBackgroundSessionIdentifier ||
               identifier == Self.hlsBackgroundSessionIdentifier
@@ -105,19 +106,17 @@ public final class OfflineDownloadController:
             completionHandler()
             return
         }
-        stateQueue.async {
-            self.backgroundCompletionHandlers[identifier] = completionHandler
+        backgroundCompletionLock.withLock {
+            backgroundCompletionHandlers[identifier] = completionHandler
         }
     }
 
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         guard let identifier = session.configuration.identifier else { return }
-        stateQueue.async {
-            let completion = self.backgroundCompletionHandlers.removeValue(forKey: identifier)
-            if let completion {
-                DispatchQueue.main.async(execute: completion)
-            }
+        let completion = backgroundCompletionLock.withLock {
+            backgroundCompletionHandlers.removeValue(forKey: identifier)
         }
+        completion?()
     }
 
     /// Starts a durable offline download. Repeated requests for the same active
