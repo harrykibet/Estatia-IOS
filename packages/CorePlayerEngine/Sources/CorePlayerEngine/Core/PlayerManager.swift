@@ -80,7 +80,7 @@ public final class PlayerManager: VideoPlaybackTarget {
             selector: cdnSelector
         )
 
-        let offlineDownloadController = OfflineDownloadController()
+        let offlineDownloadController = OfflineDownloadController.shared
 
         let cacheConfiguration =
             PlayerCacheConfiguration(
