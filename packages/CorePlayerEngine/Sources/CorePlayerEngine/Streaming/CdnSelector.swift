@@ -1,45 +1,59 @@
 import Foundation
 
-public final class CdnSelector: @unchecked Sendable {
+public final class CdnSelector: Sendable {
     private let cdns: [Cdn]
-    private let measurer: LatencyMeasurer
+    private let healthMonitor: CdnHealthMonitor
 
-    public init(cdns: [Cdn], measurer: LatencyMeasurer = DefaultLatencyMeasurer()) {
+    public init(
+        cdns: [Cdn],
+        measurer: any LatencyMeasurer = DefaultLatencyMeasurer(),
+        healthMonitor: CdnHealthMonitor? = nil
+    ) {
         self.cdns = cdns
-        self.measurer = measurer
+        self.healthMonitor = healthMonitor ?? CdnHealthMonitor(measurer: measurer)
     }
 
-    /// Choose the lowest-latency healthy CDN for the given path.
-    public func selectBestCdn(forPath path: String) async -> Cdn? {
-        guard !cdns.isEmpty else { return nil }
+    /// Selects the lowest-latency endpoint that is not circuit-open.
+    /// If no probe has completed, configured order provides a deterministic fallback.
+    public func selectBestCdn(
+        forPath path: String,
+        excluding excludedIDs: Set<String> = []
+    ) async -> Cdn? {
+        let candidates = cdns.filter { !excludedIDs.contains($0.id) }
+        guard !candidates.isEmpty else { return nil }
 
-        var latencies: [(Cdn, TimeInterval?)] = []
-        await withTaskGroup(of: (Cdn, TimeInterval?).self) { group in
-            for cdn in cdns {
-                let meas = self.measurer
-                group.addTask {
-                    if let check = cdn.healthCheckPath, let url = URL(string: check, relativeTo: cdn.baseURL) {
-                        let ms = await meas.measure(url: url)
-                        return (cdn, ms)
-                    } else {
-                        // No health check path; measure base URL
-                        let ms = await meas.measure(url: cdn.baseURL)
-                        return (cdn, ms)
-                    }
-                }
-            }
-
-            for await result in group {
-                latencies.append(result)
-            }
+        await healthMonitor.refreshIfStale(cdns: cdns)
+        let snapshot = await healthMonitor.snapshot()
+        let now = await healthMonitor.currentTime()
+        let available = candidates.filter {
+            snapshot[$0.id]?.isCircuitOpen(at: now) != true
         }
 
-        // Filter out nils (unreachable) and pick smallest latency
-        let healthy = latencies.compactMap { (cdn, latency) -> (Cdn, TimeInterval)? in
-            guard let l = latency else { return nil }
-            return (cdn, l)
+        let scored = available.compactMap { cdn -> (Cdn, TimeInterval)? in
+            guard let health = snapshot[cdn.id], let latency = health.latency else { return nil }
+            return (cdn, latency + TimeInterval(health.consecutiveFailures) * 0.250)
         }
+        if let best = scored.min(by: { $0.1 < $1.1 })?.0 { return best }
 
-        return healthy.sorted { $0.1 < $1.1 }.first?.0
+        // Preserve an availability fallback if every circuit is open; an excluded
+        // endpoint is still never reused during the same one-shot retry.
+        return available.first ?? candidates.first
+    }
+
+    public func configuredCDN(forHost host: String?) -> Cdn? {
+        guard let host = host?.lowercased() else { return nil }
+        return cdns.first { $0.baseURL.host?.lowercased() == host }
+    }
+
+    public func recordFailure(for cdn: Cdn) async {
+        await healthMonitor.recordFailure(for: cdn)
+    }
+
+    public func recordSuccess(for cdn: Cdn, latency: TimeInterval? = nil) async {
+        await healthMonitor.recordSuccess(for: cdn, latency: latency)
+    }
+
+    public func healthSnapshot() async -> [String: CdnHealth] {
+        await healthMonitor.snapshot()
     }
 }
