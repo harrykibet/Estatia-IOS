@@ -8,15 +8,13 @@
 import CoreAnalytics
 import Foundation
 
-/// Converts authoritative player state and events into the same playback
-/// QoS and personalized-watch signals emitted by the Android player engine.
-///
-/// All methods are main-actor isolated because PlayerManager owns the playback
-/// session lifecycle and consumes the engine's streams on the main actor.
+/// Converts authoritative player state and events into playback QoS metrics
+/// and the personalized-watch signals emitted by the Android player engine.
 @MainActor
 public final class PlaybackAnalytics {
 
     private let analyticsClient: any AnalyticsClient
+    private let metricsClient: any MetricsClient
 
     private var mediaId: String?
     private var sessionId: String?
@@ -29,8 +27,12 @@ public final class PlaybackAnalytics {
     private var completedPassAwaitingReplay = false
     private var lastState: PlayerState?
 
-    public init(analyticsClient: any AnalyticsClient) {
+    public init(
+        analyticsClient: any AnalyticsClient,
+        metricsClient: any MetricsClient = NoopMetricsClient()
+    ) {
         self.analyticsClient = analyticsClient
+        self.metricsClient = metricsClient
     }
 
     /// Starts a new logical watch session. The supplied uptime is captured by
@@ -66,9 +68,10 @@ public final class PlaybackAnalytics {
         if state == .playing {
             if !firstPlaybackReported, let sessionStartedAt {
                 let startupMs = elapsedMilliseconds(from: sessionStartedAt, to: uptime)
-                track(
-                    "player.startup.duration",
-                    additional: ["duration_ms": String(startupMs)]
+                metricsClient.trackDuration(
+                    name: "player.startup.duration",
+                    durationMilliseconds: startupMs,
+                    tags: currentTags()
                 )
                 firstPlaybackReported = true
             }
@@ -92,9 +95,8 @@ public final class PlaybackAnalytics {
         lastState = state
     }
 
-    /// Consumes semantic events emitted by PlayerActor. A loop is counted only
-    /// when playback starts again after a completed pass; a normal completion
-    /// by itself is not reported as a loop.
+    /// A loop is counted only when playback starts again after a completed
+    /// pass. Reaching the end without a subsequent replay is not a loop.
     public func observe(
         event: PlayerEvent,
         at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
@@ -105,26 +107,26 @@ public final class PlaybackAnalytics {
         case .playbackStarted:
             if completedPassAwaitingReplay {
                 loopCount += 1
-                track(
-                    "player.loop.count",
-                    additional: ["loop_index": String(loopCount)]
+                metricsClient.incrementCounter(
+                    name: "player.loop.count",
+                    tags: currentTags(extra: ["loop_index": String(loopCount)])
                 )
             }
             completedPassAwaitingReplay = false
-            track("Media player playback started")
+            trackEvent("Media player playback started")
 
         case .playbackPaused:
-            track("Media player paused")
+            trackEvent("Media player paused")
 
         case .playbackCompleted:
             completedPassAwaitingReplay = true
-            track("Media player playback ended")
+            trackEvent("Media player playback ended")
 
         case .bufferingStarted:
-            track("Media player buffering started")
+            trackEvent("Media player buffering started")
 
         case .bufferingEnded:
-            track("Media player buffering ended")
+            trackEvent("Media player buffering ended")
 
         case .failed(let error):
             recordFailure(error, mediaId: mediaId, at: uptime)
@@ -137,8 +139,8 @@ public final class PlaybackAnalytics {
         }
     }
 
-    /// Records an initial play failure that occurs before PlayerManager has
-    /// attached to the new engine's event stream.
+    /// Records a playback failure, including failures that occur before
+    /// PlayerManager has attached to the new engine's event stream.
     public func recordFailure(
         _ error: PlayerError,
         mediaId: String,
@@ -151,8 +153,8 @@ public final class PlaybackAnalytics {
         analyticsClient.track(name: "Media player error", properties: properties)
     }
 
-    /// Ends the active session exactly once and emits the final personalized
-    /// engagement signal expected by the feed/recommendation pipeline.
+    /// Ends the active session once and emits the final personalized watch
+    /// signal with the Android-compatible metadata contract.
     public func finishSession(
         at uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
     ) {
@@ -195,9 +197,10 @@ public final class PlaybackAnalytics {
         guard durationMs > 0 else { return }
 
         totalWatchTimeMs += durationMs
-        track(
-            "player.watch.duration",
-            additional: ["duration_ms": String(durationMs)]
+        metricsClient.trackDuration(
+            name: "player.watch.duration",
+            durationMilliseconds: durationMs,
+            tags: currentTags()
         )
     }
 
@@ -207,24 +210,28 @@ public final class PlaybackAnalytics {
         bufferingStartedAt = nil
         guard durationMs > 0 else { return }
 
-        track(
-            "player.buffering.duration",
-            additional: ["duration_ms": String(durationMs)]
+        metricsClient.trackDuration(
+            name: "player.buffering.duration",
+            durationMilliseconds: durationMs,
+            tags: currentTags()
         )
     }
 
-    private func track(
-        _ name: String,
-        additional: [String: String] = [:]
-    ) {
-        var properties = additional
+    private func trackEvent(_ name: String) {
+        analyticsClient.track(name: name, properties: currentTags())
+    }
+
+    private func currentTags(
+        extra: [String: String] = [:]
+    ) -> [String: String] {
+        var tags = extra
         if let mediaId {
-            properties["media_id"] = mediaId
+            tags["media_id"] = mediaId
         }
         if let sessionId {
-            properties["session_id"] = sessionId
+            tags["session_id"] = sessionId
         }
-        analyticsClient.track(name: name, properties: properties)
+        return tags
     }
 
     private func elapsedMilliseconds(
