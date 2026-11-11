@@ -83,7 +83,8 @@ public final class OfflineDownloadController:
 
         try? FileManager.default.createDirectory(
             at: rootDirectory,
-            withIntermediateDirectories: true
+            withIntermediateDirectories: true,
+            attributes: nil
         )
         loadRegistry()
         restoreActiveTasks()
@@ -110,14 +111,14 @@ public final class OfflineDownloadController:
             completionHandler()
             return
         }
-        backgroundCompletionLock.withLock {
+        backgroundCompletionLock.offlineWithLock {
             backgroundCompletionHandlers[identifier] = completionHandler
         }
     }
 
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         guard let identifier = session.configuration.identifier else { return }
-        let completion = backgroundCompletionLock.withLock {
+        let completion = backgroundCompletionLock.offlineWithLock {
             backgroundCompletionHandlers.removeValue(forKey: identifier)
         }
         completion?()
@@ -570,7 +571,7 @@ public final class OfflineDownloadController:
 }
 
 private extension NSLock {
-    func withLock<T>(_ operation: () -> T) -> T {
+    func offlineWithLock<T>(_ operation: () -> T) -> T {
         lock()
         defer { unlock() }
         return operation()
