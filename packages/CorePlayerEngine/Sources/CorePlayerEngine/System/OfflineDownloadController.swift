@@ -12,8 +12,10 @@ public final class OfflineDownloadController:
     NSObject,
     OfflineMediaResolving,
     URLSessionDownloadDelegate,
-    AVAssetDownloadDelegate,
     @unchecked Sendable {
+
+    public static let progressiveBackgroundSessionIdentifier = "com.application.estatia.offline-progressive.v1"
+    public static let hlsBackgroundSessionIdentifier = "com.application.estatia.offline-hls.v1"
 
     private let rootDirectory: URL
     private let registryURL: URL
@@ -31,6 +33,7 @@ public final class OfflineDownloadController:
     private var records: [String: OfflineDownloadRecord] = [:]
     private var tasks: [String: URLSessionTask] = [:]
     private var observers: [UUID: AsyncStream<[OfflineDownloadRecord]>.Continuation] = [:]
+    private var backgroundCompletionHandlers: [String: @Sendable () -> Void] = [:]
 
     public init(rootDirectory: URL = OfflineDownloadController.defaultRootDirectory()) {
         self.rootDirectory = rootDirectory
@@ -43,21 +46,32 @@ public final class OfflineDownloadController:
 
         super.init()
 
+        #if os(iOS)
+        let progressiveConfiguration = URLSessionConfiguration.background(
+            withIdentifier: Self.progressiveBackgroundSessionIdentifier
+        )
+        progressiveConfiguration.isDiscretionary = false
+        progressiveConfiguration.sessionSendsLaunchEvents = true
         self.progressiveSession = URLSession(
-            configuration: .default,
+            configuration: progressiveConfiguration,
             delegate: self,
             delegateQueue: delegateQueue
         )
 
-        #if os(iOS)
         let configuration = URLSessionConfiguration.background(
-            withIdentifier: "com.application.estatia.offline-hls.v1"
+            withIdentifier: Self.hlsBackgroundSessionIdentifier
         )
         configuration.isDiscretionary = false
         configuration.sessionSendsLaunchEvents = true
         self.hlsSession = AVAssetDownloadURLSession(
             configuration: configuration,
             assetDownloadDelegate: self,
+            delegateQueue: delegateQueue
+        )
+        #else
+        self.progressiveSession = URLSession(
+            configuration: .default,
+            delegate: self,
             delegateQueue: delegateQueue
         )
         #endif
@@ -77,6 +91,33 @@ public final class OfflineDownloadController:
         ).first ?? FileManager.default.temporaryDirectory
         return applicationSupport
             .appendingPathComponent("Estatia/OfflineMedia/v1", isDirectory: true)
+    }
+
+    /// Stores the system completion handler until URLSession has delivered all
+    /// background events for one of this controller's sessions.
+    public func handleBackgroundSessionEvents(
+        identifier: String,
+        completionHandler: @escaping @Sendable () -> Void
+    ) {
+        guard identifier == Self.progressiveBackgroundSessionIdentifier ||
+              identifier == Self.hlsBackgroundSessionIdentifier
+        else {
+            completionHandler()
+            return
+        }
+        stateQueue.async {
+            self.backgroundCompletionHandlers[identifier] = completionHandler
+        }
+    }
+
+    public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        guard let identifier = session.configuration.identifier else { return }
+        stateQueue.async {
+            let completion = self.backgroundCompletionHandlers.removeValue(forKey: identifier)
+            if let completion {
+                DispatchQueue.main.async(execute: completion)
+            }
+        }
     }
 
     /// Starts a durable offline download. Repeated requests for the same active
@@ -516,3 +557,7 @@ private extension NSLock {
         return operation()
     }
 }
+
+#if os(iOS)
+extension OfflineDownloadController: AVAssetDownloadDelegate {}
+#endif
