@@ -708,8 +708,9 @@ final class PlayerActorTests: XCTestCase {
                 code: AVError.Code.decoderNotFound.rawValue
             )
         )
+        let externalFailureState = await states.next()
         XCTAssertEqual(
-            await states.next(),
+            externalFailureState,
             .error(.decoderUnavailable)
         )
         XCTAssertEqual(transport.loadCount, 1)
