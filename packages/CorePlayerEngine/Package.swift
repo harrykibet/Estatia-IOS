@@ -13,13 +13,22 @@ let package = Package(
             targets: ["CorePlayerEngine"]
         ),
     ],
+    dependencies: [
+        .package(path: "../CoreAnalytics")
+    ],
     targets: [
         .target(
-            name: "CorePlayerEngine"
+            name: "CorePlayerEngine",
+            dependencies: [
+                .product(name: "CoreAnalytics", package: "coreanalytics")
+            ]
         ),
         .testTarget(
             name: "CorePlayerEngineTests",
-            dependencies: ["CorePlayerEngine"]
+            dependencies: [
+                "CorePlayerEngine",
+                .product(name: "CoreAnalytics", package: "coreanalytics")
+            ]
         ),
     ]
 )
