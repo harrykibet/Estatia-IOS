@@ -47,6 +47,10 @@ final class DefaultPlayerEngine: PlayerEngine, AVPlayerProviding {
         presentationTransport.livePlaybackTimingSnapshot()
     }
 
+    var currentPlaybackRate: Float? {
+        presentationTransport.currentPlaybackRate()
+    }
+
     func setPreferredPeakBitRate(_ bitrateBps: Double) {
         presentationTransport.setPreferredPeakBitRate(bitrateBps)
     }
