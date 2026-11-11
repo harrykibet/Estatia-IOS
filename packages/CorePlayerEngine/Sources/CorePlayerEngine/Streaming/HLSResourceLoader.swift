@@ -372,9 +372,11 @@ final class HLSResourceLoader:
                     throw HLSResourceLoaderError.rangeNotSupported
                 }
                 let available = response.data.count - start
-                let count = min(requested, available)
-                bytes = count > 0
-                    ? response.data.subdata(in: start..<(start + count))
+                let countToTake = remaining.map {
+                    min(Int($0), available)
+                } ?? available
+                bytes = countToTake > 0
+                    ? response.data.subdata(in: start..<(start + countToTake))
                     : Data()
             } else {
                 bytes = Data(response.data.prefix(requested))
