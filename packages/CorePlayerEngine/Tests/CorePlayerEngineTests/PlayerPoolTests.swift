@@ -43,6 +43,10 @@ final class PlayerPoolTests: XCTestCase {
         private(set) var pauseCount = 0
         private(set) var stopCount = 0
         private(set) var releaseCount = 0
+        private(set) var currentTimeValue: TimeInterval = 0
+        private(set) var restoredPositions: [TimeInterval] = []
+        private var initialPlaybackPosition: TimeInterval?
+        private var stateSnapshot: PlayerState = .idle
 
         var loadGate: ManualAsyncGate?
         var stopGate: ManualAsyncGate?
@@ -79,6 +83,7 @@ final class PlayerPoolTests: XCTestCase {
 
         func load(_ source: MediaSource) async throws {
             loadCount += 1
+            stateSnapshot = .loading
 
             // A manually controlled gate lets lifecycle tests hold a load
             // across releaseAll() without relying on timing or sleeps.
@@ -92,6 +97,12 @@ final class PlayerPoolTests: XCTestCase {
                 throw FakeEngineError.loadFailed
             }
 
+            if let position = initialPlaybackPosition {
+                initialPlaybackPosition = nil
+                try await seek(to: position)
+            }
+
+            stateSnapshot = .ready
             stateContinuation?.yield(.ready)
         }
 
@@ -113,7 +124,19 @@ final class PlayerPoolTests: XCTestCase {
             stateContinuation?.yield(.paused)
         }
 
-        func seek(to seconds: TimeInterval) async throws {}
+        func seek(to seconds: TimeInterval) async throws {
+            currentTimeValue = seconds
+            restoredPositions.append(seconds)
+        }
+
+        func setInitialPlaybackPosition(_ seconds: TimeInterval?) {
+            initialPlaybackPosition = seconds
+        }
+
+        func simulatePlayback(at seconds: TimeInterval) {
+            currentTimeValue = seconds
+            stateSnapshot = .playing
+        }
 
         func stop() async throws {
             stopCount += 1
@@ -122,6 +145,8 @@ final class PlayerPoolTests: XCTestCase {
                 await stopGate.wait()
             }
 
+            currentTimeValue = 0
+            stateSnapshot = .idle
             stateContinuation?.yield(.idle)
         }
 
@@ -133,7 +158,7 @@ final class PlayerPoolTests: XCTestCase {
 
         var currentState: PlayerState {
             get async {
-                .idle
+                stateSnapshot
             }
         }
 
@@ -143,7 +168,7 @@ final class PlayerPoolTests: XCTestCase {
 
         var currentTime: TimeInterval {
             get async {
-                0
+                currentTimeValue
             }
         }
 
@@ -346,6 +371,89 @@ final class PlayerPoolTests: XCTestCase {
         XCTAssertEqual(created.count, 1)
         XCTAssertTrue(first.engine === second.engine)
         XCTAssertEqual(second.mediaId, "two")
+    }
+
+    func testPlaybackPositionIsRestoredAfterPoolRelease() async throws {
+        var created: [FakePlayerEngine] = []
+        let pool = PlayerPool(
+            configuration: PlayerPoolConfiguration(
+                maxPlayers: 1,
+                maxIdlePlayers: 1
+            ),
+            factory: {
+                let engine = FakePlayerEngine()
+                created.append(engine)
+                return engine
+            }
+        )
+
+        let first = try await pool.getOrCreate(
+            mediaId: "media-one",
+            source: makeSource("media-one")
+        )
+        let engine = first.engine as! FakePlayerEngine
+        engine.simulatePlayback(at: 83.25)
+
+        await pool.release(mediaId: "media-one")
+        XCTAssertEqual(engine.currentTimeValue, 0, "stop() should reset the recycled transport")
+
+        let restored = try await pool.getOrCreate(
+            mediaId: "media-one",
+            source: makeSource("media-one")
+        )
+
+        XCTAssertTrue(first.engine === restored.engine)
+        XCTAssertEqual(engine.restoredPositions, [83.25])
+        XCTAssertEqual(engine.currentTimeValue, 83.25, accuracy: 0.001)
+        XCTAssertEqual(created.count, 1)
+    }
+
+    func testPlaybackPositionSurvivesLRUEvictionAndEngineReuse() async throws {
+        var created: [FakePlayerEngine] = []
+        let pool = PlayerPool(
+            configuration: PlayerPoolConfiguration(
+                maxPlayers: 2,
+                maxIdlePlayers: 1
+            ),
+            factory: {
+                let engine = FakePlayerEngine()
+                created.append(engine)
+                return engine
+            }
+        )
+
+        let first = try await pool.getOrCreate(
+            mediaId: "media-one",
+            source: makeSource("media-one")
+        )
+        let second = try await pool.getOrCreate(
+            mediaId: "media-two",
+            source: makeSource("media-two")
+        )
+        let firstEngine = first.engine as! FakePlayerEngine
+        firstEngine.simulatePlayback(at: 41.5)
+
+        await pool.updatePinnedIds(["media-two"])
+        let third = try await pool.getOrCreate(
+            mediaId: "media-three",
+            source: makeSource("media-three")
+        )
+
+        XCTAssertTrue(first.engine === third.engine, "The least-recently-used engine should be recycled")
+        XCTAssertEqual(firstEngine.currentTimeValue, 0)
+
+        await pool.release(mediaId: "media-three")
+        let restored = try await pool.getOrCreate(
+            mediaId: "media-one",
+            source: makeSource("media-one")
+        )
+        let remaining = await pool.get(mediaId: "media-two")
+
+        XCTAssertTrue(first.engine === restored.engine)
+        XCTAssertEqual(firstEngine.restoredPositions, [41.5])
+        XCTAssertEqual(firstEngine.currentTimeValue, 41.5, accuracy: 0.001)
+        XCTAssertTrue(remaining === second)
+        XCTAssertEqual(created.count, 2)
     }
 
     func testLeastRecentlyUsedUnpinnedPlayerIsRecycled() async {

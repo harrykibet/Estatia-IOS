@@ -35,6 +35,10 @@ public protocol PlayerEngine: AnyObject {
 
     func seek(to seconds: TimeInterval) async throws
 
+    /// Schedules a position to restore on the next loaded item before it is
+    /// reported ready. Pass nil to clear any pending restoration.
+    func setInitialPlaybackPosition(_ seconds: TimeInterval?)
+
     func stop() async throws
 
     func release() async throws
@@ -79,6 +83,9 @@ public extension PlayerEngine {
 
     /// Compatibility default for custom/test engines without an AVFoundation transport.
     func applyPlaybackQuality(_ preferences: PlaybackQualityPreferences) {}
+
+    /// Custom engines may ignore this optional pool-restoration capability.
+    func setInitialPlaybackPosition(_ seconds: TimeInterval?) {}
 
     var isSustainedLowBandwidth: Bool { false }
 
