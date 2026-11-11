@@ -16,7 +16,26 @@ final class OfflineDownloadControllerTests: XCTestCase {
     }
 
     private func fingerprint(_ url: URL) -> String {
-        SHA256.hash(data: Data(url.absoluteString.utf8))
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.fragment = nil
+        let transientNames: Set<String> = [
+            "token", "access_token", "auth", "authorization",
+            "signature", "sig", "expires", "expiry", "policy",
+            "key-pair-id", "jwt", "hdnea", "hdnts"
+        ]
+        let retained = components?.queryItems?.filter { item in
+            let name = item.name.lowercased()
+            return !transientNames.contains(name)
+                && !name.hasPrefix("x-amz-")
+                && !name.hasPrefix("x-goog-")
+                && !name.hasPrefix("x-ms-")
+        }.sorted {
+            if $0.name == $1.name { return ($0.value ?? "") < ($1.value ?? "") }
+            return $0.name < $1.name
+        }
+        components?.queryItems = retained
+        let identity = components?.string ?? url.absoluteString
+        return SHA256.hash(data: Data(identity.utf8))
             .map { String(format: "%02x", $0) }
             .joined()
     }
@@ -65,10 +84,20 @@ final class OfflineDownloadControllerTests: XCTestCase {
         let changedSignedURL = URL(
             string: "https://cdn.estatia.com/video.mp4?token=rotated-secret"
         )!
-        let changedSource = MediaSource(url: changedSignedURL, type: .progressive)
+        let refreshedSource = MediaSource(url: changedSignedURL, type: .progressive)
+        let refreshedTokenResolution = await controller.offlineSource(
+            for: "property-video-1",
+            originalSource: refreshedSource
+        )
+        XCTAssertEqual(refreshedTokenResolution?.url, localURL)
+
+        let differentVariant = MediaSource(
+            url: URL(string: "https://cdn.estatia.com/video.mp4?variant=low")!,
+            type: .progressive
+        )
         let mismatched = await controller.offlineSource(
             for: "property-video-1",
-            originalSource: changedSource
+            originalSource: differentVariant
         )
         XCTAssertNil(mismatched)
     }
