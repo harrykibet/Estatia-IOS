@@ -98,19 +98,38 @@ public actor FileMediaCacheStore {
     private let fileManager:
         FileManager
 
+    private let sizingPolicy:
+        MediaCacheSizingPolicy
+
+    private let availableStorageBytesProvider:
+        @Sendable () -> Int64?
+
     /// Recent reads stay in memory so hot playback does not rewrite
     /// metadata.json on every cache hit.
     private var accessOverrides:
         [String: Date] = [:]
 
+    /// Lazily measured aggregate size. It is updated by writes/removals so
+    /// normal chunk writes do not need to enumerate the entire cache.
+    private var knownTotalByteCount: Int64?
+
     // MARK: - Init
 
     public init(
         rootDirectory: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        sizingPolicy: MediaCacheSizingPolicy = MediaCacheSizingPolicy(),
+        availableStorageBytesProvider: @escaping @Sendable () -> Int64? = {
+            let attributes = try? FileManager.default.attributesOfFileSystem(
+                forPath: NSHomeDirectory()
+            )
+            return (attributes?[.systemFreeSize] as? NSNumber)?.int64Value
+        }
     ) {
         self.rootDirectory = rootDirectory
         self.fileManager = fileManager
+        self.sizingPolicy = sizingPolicy
+        self.availableStorageBytesProvider = availableStorageBytesProvider
     }
 
     // MARK: - Read
@@ -290,22 +309,14 @@ public actor FileMediaCacheStore {
                 key: key
             )
 
-        if let previousLength =
-            entry.chunks[offset] {
-
-            entry.cachedByteCount -=
-                Int64(
-                    previousLength
-                )
-        }
+        let previousChunkByteCount =
+            Int64(entry.chunks[offset] ?? 0)
 
         entry.chunks[offset] =
             data.count
 
         entry.cachedByteCount +=
-            Int64(
-                data.count
-            )
+            Int64(data.count) - previousChunkByteCount
 
         if let contentType {
             entry.contentType =
@@ -326,6 +337,22 @@ public actor FileMediaCacheStore {
         try saveEntry(
             entry
         )
+
+        if let knownTotalByteCount {
+            self.knownTotalByteCount = max(
+                0,
+                knownTotalByteCount -
+                    previousChunkByteCount +
+                    Int64(data.count)
+            )
+        }
+
+        // Apply the cache ceiling on every persisted chunk, not only after
+        // speculative warming. AVAssetResourceLoader uses this same store,
+        // so ordinary playback writes are bounded too. Eviction is best
+        // effort: a trim failure must not turn a successful network read
+        // into a playback failure.
+        try? trimToCurrentStorageBudget()
     }
 
     // MARK: - Metadata
@@ -376,12 +403,36 @@ public actor FileMediaCacheStore {
         guard fileManager.fileExists(
             atPath: directory.path
         ) else {
+            // The filesystem may have purged cache data while the process
+            // was alive. Force a fresh measurement on the next trim.
+            knownTotalByteCount = nil
+            accessOverrides.removeValue(forKey: key)
             return
+        }
+
+        let removedByteCount: Int64?
+        if knownTotalByteCount != nil {
+            removedByteCount =
+                (try? loadEntry(key: key))?.cachedByteCount
+        } else {
+            removedByteCount = nil
         }
 
         try fileManager.removeItem(
             at: directory
         )
+
+        if let knownTotalByteCount,
+           let removedByteCount {
+            self.knownTotalByteCount = max(
+                0,
+                knownTotalByteCount - removedByteCount
+            )
+        } else if knownTotalByteCount != nil {
+            // Corrupt or externally changed metadata makes the cached total
+            // uncertain. Reconcile it from disk before the next trim.
+            self.knownTotalByteCount = nil
+        }
 
         accessOverrides.removeValue(
             forKey:
@@ -394,6 +445,8 @@ public actor FileMediaCacheStore {
         guard fileManager.fileExists(
             atPath: rootDirectory.path
         ) else {
+            knownTotalByteCount = 0
+            accessOverrides.removeAll(keepingCapacity: false)
             return
         }
 
@@ -401,12 +454,22 @@ public actor FileMediaCacheStore {
             at: rootDirectory
         )
 
+        knownTotalByteCount = 0
         accessOverrides.removeAll(
             keepingCapacity: false
         )
     }
 
     // MARK: - Eviction
+
+    /// Re-evaluates the storage-aware limit and evicts least-recently-used
+    /// media entries until the persistent playback cache is within budget.
+    public func trimToCurrentStorageBudget() throws {
+        let byteLimit = sizingPolicy.cacheLimitBytes(
+            availableStorageBytes: availableStorageBytesProvider()
+        )
+        try trim(to: byteLimit)
+    }
 
     public func trim(
         to byteLimit: Int64
@@ -418,22 +481,17 @@ public actor FileMediaCacheStore {
 
         try ensureRootDirectory()
 
-        let entries =
-            try allEntries()
-
         var totalBytes =
-            entries.reduce(
-                Int64.zero
-            ) {
-                $0 + $1.cachedByteCount
-            }
+            try currentTotalByteCount()
 
         guard totalBytes > byteLimit else {
             return
         }
 
+        // Only scan and sort metadata when the current byte count exceeds
+        // the limit; the common under-budget write path stays O(1).
         let oldestFirst =
-            entries.sorted {
+            try allEntries().sorted {
                 $0.lastAccessedAt <
                 $1.lastAccessedAt
             }
@@ -461,15 +519,17 @@ public actor FileMediaCacheStore {
         let entries =
             try allEntries()
 
+        let totalBytes =
+            entries.reduce(Int64.zero) {
+                $0 + $1.cachedByteCount
+            }
+        knownTotalByteCount = totalBytes
+
         return MediaCacheStatistics(
             entryCount:
                 entries.count,
             totalBytes:
-                entries.reduce(
-                    Int64.zero
-                ) {
-                    $0 + $1.cachedByteCount
-                }
+                totalBytes
         )
     }
 
@@ -482,6 +542,19 @@ public actor FileMediaCacheStore {
             at: rootDirectory,
             withIntermediateDirectories: true
         )
+    }
+
+    private func currentTotalByteCount() throws -> Int64 {
+        if let knownTotalByteCount {
+            return knownTotalByteCount
+        }
+
+        let total =
+            try allEntries().reduce(Int64.zero) {
+                $0 + $1.cachedByteCount
+            }
+        knownTotalByteCount = total
+        return total
     }
 
     private func allEntries()
@@ -542,6 +615,9 @@ public actor FileMediaCacheStore {
         guard fileManager.fileExists(
             atPath: metadataURL.path
         ) else {
+            // A missing metadata file can indicate that iOS purged part of
+            // the caches directory. Do not trust a previously cached total.
+            knownTotalByteCount = nil
             return nil
         }
 
