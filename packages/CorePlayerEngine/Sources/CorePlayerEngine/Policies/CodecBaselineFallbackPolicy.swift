@@ -18,9 +18,10 @@ enum CodecBaselineFallbackPolicy {
             .filter { $0.name.caseInsensitiveCompare("codec") == .orderedSame }
             .compactMap(\.value)
 
-        guard !codecValues.contains(where: {
+        let isAlreadyBaseline = !codecValues.isEmpty && codecValues.allSatisfy {
             $0.caseInsensitiveCompare("baseline") == .orderedSame
-        }) else {
+        }
+        guard !isAlreadyBaseline else {
             return nil
         }
 
