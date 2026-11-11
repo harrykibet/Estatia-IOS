@@ -14,6 +14,8 @@ public final class OfflineDownloadController:
     URLSessionDownloadDelegate,
     @unchecked Sendable {
 
+    public static let shared = OfflineDownloadController()
+
     public static let progressiveBackgroundSessionIdentifier = "com.application.estatia.offline-progressive.v1"
     public static let hlsBackgroundSessionIdentifier = "com.application.estatia.offline-hls.v1"
 
