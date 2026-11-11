@@ -467,7 +467,7 @@ final class AVPlayerWrapper:
 
                 switch event {
                 case .ready:
-                    self.restoreInitialPlaybackPosition {
+                    self.restoreInitialPlaybackPosition(generation: generation) {
                         guard self.isCurrentSession(generation) else { return }
                         self.onReady?()
                     }
@@ -593,11 +593,20 @@ final class AVPlayerWrapper:
     /// Waits for an initial seek before signalling item readiness to PlayerActor.
     @MainActor
     private func restoreInitialPlaybackPosition(
+        generation: UInt64,
         completion: @escaping @MainActor @Sendable () -> Void
     ) {
         queue.async { [weak self] in
             guard let self,
-                  let seconds = self.initialPlaybackPosition,
+                  self.isCurrentSession(generation)
+            else {
+                // A delayed readiness callback from a replaced item must not
+                // consume the pending position intended for the new session.
+                Task { @MainActor in completion() }
+                return
+            }
+
+            guard let seconds = self.initialPlaybackPosition,
                   let player = self.player
             else {
                 Task { @MainActor in completion() }
