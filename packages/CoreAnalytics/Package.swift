@@ -6,19 +6,33 @@ import PackageDescription
 let package = Package(
     name: "CoreAnalytics",
     platforms: [
-        .iOS(.v18)
+        .iOS(.v18),
+        .macOS(.v13)
     ],
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "CoreAnalytics",
-            targets: ["CoreAnalytics"]),
+            targets: ["CoreAnalytics"]
+        ),
+    ],
+    dependencies: [
+        .package(
+            url: "https://github.com/firebase/firebase-ios-sdk.git",
+            from: "12.0.0"
+        )
     ],
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "CoreAnalytics"),
+            name: "CoreAnalytics",
+            dependencies: [
+                .product(name: "FirebaseAnalytics", package: "firebase-ios-sdk"),
+                .product(
+                    name: "FirebasePerformance",
+                    package: "firebase-ios-sdk",
+                    condition: .when(platforms: [.iOS])
+                )
+            ]
+        ),
         .testTarget(
             name: "CoreAnalyticsTests",
             dependencies: ["CoreAnalytics"]

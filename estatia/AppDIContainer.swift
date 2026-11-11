@@ -100,7 +100,7 @@ public final class AppDIContainer {
 
         self.appScope = AppScope(
             logger: ConsoleLogger(),
-            analytics: NoopAnalyticsClient(),
+            analytics: FirebaseAnalyticsClient(),
             notifications: NoopNotificationsClient(),
             apiClient: NoopAPIClient(),
             database: InMemoryDatabaseClient(),
