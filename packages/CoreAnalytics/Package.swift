@@ -26,7 +26,11 @@ let package = Package(
             name: "CoreAnalytics",
             dependencies: [
                 .product(name: "FirebaseAnalytics", package: "firebase-ios-sdk"),
-                .product(name: "FirebasePerformance", package: "firebase-ios-sdk")
+                .product(
+                    name: "FirebasePerformance",
+                    package: "firebase-ios-sdk",
+                    condition: .when(platforms: [.iOS])
+                )
             ]
         ),
         .testTarget(
