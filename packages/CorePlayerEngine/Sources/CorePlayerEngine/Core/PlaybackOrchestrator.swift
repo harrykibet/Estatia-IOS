@@ -66,10 +66,22 @@ public final class PlaybackOrchestrator {
 
     // MARK: - Play
 
+    /// Existing two-argument entry point retained as the VideoPlaybackTarget witness.
+    public func play(
+        mediaId: String,
+        source: MediaSource
+    ) async throws {
+        try await play(
+            mediaId: mediaId,
+            source: source,
+            qualityPreferences: .unrestricted
+        )
+    }
+
     public func play(
         mediaId: String,
         source: MediaSource,
-        qualityPreferences: PlaybackQualityPreferences = .unrestricted
+        qualityPreferences: PlaybackQualityPreferences
     ) async throws {
         try await playInternal(
             mediaId: mediaId,
