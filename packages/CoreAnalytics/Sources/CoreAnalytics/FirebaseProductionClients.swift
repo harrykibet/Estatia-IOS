@@ -1,5 +1,7 @@
 import FirebaseAnalytics
+#if canImport(FirebasePerformance)
 import FirebasePerformance
+#endif
 import Foundation
 
 /// Production event sink backed by Firebase Analytics.
@@ -109,6 +111,7 @@ public final class FirebasePerformanceMetricsClient: MetricsClient {
         durationMilliseconds: Int64,
         tags: [String: String]
     ) {
+#if canImport(FirebasePerformance)
         guard durationMilliseconds > 0,
               let trace = Performance.startTrace(
                 name: Self.normalizedTraceName(for: name)
@@ -122,12 +125,20 @@ public final class FirebasePerformanceMetricsClient: MetricsClient {
         }
         trace.setValue(durationMilliseconds, forMetric: "observed_duration_ms")
         trace.stop()
+#else
+        // Firebase Performance is an iOS runtime service. The shared package
+        // remains buildable and testable on macOS without the iOS-only SDK.
+        _ = name
+        _ = durationMilliseconds
+        _ = tags
+#endif
     }
 
     public func incrementCounter(
         name: String,
         tags: [String: String]
     ) {
+#if canImport(FirebasePerformance)
         guard let trace = Performance.startTrace(
             name: Self.normalizedTraceName(for: name)
         ) else {
@@ -139,6 +150,10 @@ public final class FirebasePerformanceMetricsClient: MetricsClient {
         }
         trace.incrementMetric("count", by: 1)
         trace.stop()
+#else
+        _ = name
+        _ = tags
+#endif
     }
 
     static func normalizedTraceName(for name: String) -> String {
