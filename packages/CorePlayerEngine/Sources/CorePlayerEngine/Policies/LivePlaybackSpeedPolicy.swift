@@ -94,7 +94,16 @@ public final class LivePlaybackSpeedController {
         }
 
         if let previous = appliedRates[identifier] {
-            if abs(targetRate - previous.rate) < 0.001 {
+            // AVPlayer can restore defaultRate (normally 1.0) independently
+            // of this controller, for example after play() or reaching live
+            // edge. Do not trust our cached target when the actual transport
+            // rate no longer matches it.
+            let actualRateMatchesTarget = engine.currentPlaybackRate.map {
+                $0.isFinite && abs($0 - targetRate) < 0.001
+            } ?? true
+
+            if abs(targetRate - previous.rate) < 0.001,
+               actualRateMatchesTarget {
                 return previous.rate
             }
 
